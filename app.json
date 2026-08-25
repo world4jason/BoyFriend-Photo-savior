@@ -1,0 +1,28 @@
+{
+  "expo": {
+    "name": "BoyFriend Photo Savior",
+    "slug": "boyfriend-photo-savior",
+    "scheme": "boyfriendphotosavior",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "platforms": ["ios", "android", "web"],
+    "ios": {
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSCameraUsageDescription": "Use the camera to align your shot with a composition guide.",
+        "NSPhotoLibraryUsageDescription": "Choose a reference photo to build a composition guide."
+      }
+    },
+    "android": {
+      "permissions": ["CAMERA", "READ_MEDIA_IMAGES"]
+    },
+    "web": {
+      "bundler": "metro"
+    },
+    "plugins": [
+      ["expo-camera", {"cameraPermission": "Allow BoyFriend Photo Savior to use your camera."}],
+      ["expo-image-picker", {"photosPermission": "Allow BoyFriend Photo Savior to access reference photos."}]
+    ]
+  }
+}
