@@ -3,7 +3,7 @@
     "name": "BoyFriend Photo Savior",
     "slug": "boyfriend-photo-savior",
     "scheme": "boyfriendphotosavior",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
     "platforms": ["ios", "android", "web"],
@@ -15,7 +15,7 @@
       }
     },
     "android": {
-      "permissions": ["CAMERA", "READ_MEDIA_IMAGES"]
+      "permissions": ["CAMERA"]
     },
     "web": {
       "bundler": "metro"

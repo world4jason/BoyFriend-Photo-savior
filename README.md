@@ -1,85 +1,100 @@
 # BoyFriend Photo Savior
 
-Reference-photo composition guidance for **Web, iOS, and Android**.
+A **reference → abstract guide → live camera** MVP for Web, iOS and Android.
 
-## MVP flow
+The product intentionally does **not** put the whole source photo on top of the camera. It keeps only the composition information that is useful while shooting: body anchors, face direction, multiple-person relationship, or food/object zones.
 
-1. Choose a reference photo.
-2. Turn it into an editable composition guide.
-3. Pick **Simple / Outline / Pose** guide rendering.
-4. Nudge or scale the guide.
-5. Open the live camera and place the subject into the guide.
-6. Capture the shot.
+## What works now
 
-This repository intentionally separates the product UI from pose detection. `src/pose/PoseDetector.ts` defines the adapter boundary for MediaPipe, MoveNet, ML Kit, or another runtime.
-
-## Stack
-
-- Expo / React Native / TypeScript
-- `expo-camera`
-- `expo-image-picker`
-- `react-native-svg`
-
-One shared UI targets Web, iOS, and Android.
+- Expo / React Native shared UI for Web, iOS and Android
+- Built-in demo reference gallery
+  - half-body cafe pose
+  - look-back standing pose
+  - low squat
+  - two-person pose relationship
+  - three-object dessert composition
+- Simple / Outline / Pose guide rendering
+- Full-body limb anchors when the template contains them
+- Multi-person guides
+- Food/object zones and relative placement lines
+- Show reference / Guide-only preview
+- Move / scale / reset guide
+- Live camera overlay
+- Face-direction flip
+- Camera capture with a captured thumbnail
+- Import your own reference image (manual guide in this MVP)
+- `PoseDetector` adapter boundary for automatic extraction next
 
 ## Run
+
+Use Node 22.13+ for Expo SDK 57.
 
 ```bash
 npm install
 npx expo start
 ```
 
-Then press:
+Then:
 
-- `w` for Web
-- `i` for iOS simulator
-- `a` for Android emulator
+- press `w` for Web
+- press `i` for iOS simulator
+- press `a` for Android emulator
 
-Camera behavior should also be tested on a physical device.
+For camera behavior, a physical phone is recommended.
 
-## Current status
+## Web export
 
-### Implemented
-
-- Cross-platform Expo shell
-- Reference image picker
-- Three guide styles: Simple, Outline, Pose
-- Editable guide position and scale
-- Live camera overlay
-- Face/look-space flip
-- Camera capture
-- Rule-of-thirds overlay
-- `PoseDetector` interface
-- landmark-to-guide `HeuristicGuideGenerator`
-
-### Next
-
-- Automatic reference-photo pose extraction
-- Face direction from face landmarks
-- Live pose matching and alignment score
-- Auto-capture when alignment passes a threshold
-- Person segmentation → clean silhouette/outline
-- Food/object composition guides
-- Save/share captured photos
-
-## Architecture
-
-```text
-Reference image
-      |
-      v
-PoseDetector (adapter)
-      |
-      v
-GuideGenerator
-      |
-      v
-GuideSpec
-  |       |       |
-Simple  Outline  Pose
-      |
-      v
-Live Camera Overlay
+```bash
+npm run export:web
 ```
 
-The product model is **reference → abstract guide → camera**, not transparent source-photo overlay.
+The static output is written by Expo to `dist/`.
+
+## MVP architecture
+
+```text
+Reference image / built-in demo
+            |
+            v
+     Composition Guide
+   /          |          \
+Simple     Outline       Pose
+            |
+            v
+      Live Camera View
+            |
+            v
+         Capture
+```
+
+The next detector plugs into the same flow:
+
+```text
+User reference image
+        |
+        v
+MediaPipe / MoveNet / ML Kit
+        |
+        v
+Pose landmarks + face direction
+        |
+        v
+GuideGenerator
+        |
+        v
+GuideSpec (same UI as today)
+```
+
+## Demo photos
+
+The built-in samples use free-to-use Unsplash photos and include photographer credit in the UI. They are only reference material for validating the guide interaction. For a packaged offline build, replace them with local licensed assets.
+
+## Next milestones
+
+1. Automatic reference-photo pose extraction.
+2. Face landmarks / face yaw to set the direction arrow.
+3. Person segmentation to generate a cleaner SOVS-like contour.
+4. Live subject detection and alignment score.
+5. Auto-capture when the framing is close enough.
+6. General object segmentation for arbitrary food references.
+7. Save/share captured photos.

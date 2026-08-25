@@ -1,4 +1,4 @@
-import { GuideSpec, NormalizedPoint } from '../types';
+import { GuideSpec, NormalizedPoint, PersonGuide, PoseJoints } from '../types';
 
 export type PoseLandmark = NormalizedPoint & {
   name: string;
@@ -12,8 +12,8 @@ export type PoseDetection = {
 };
 
 /**
- * Cross-platform boundary for future MediaPipe / MoveNet adapters.
- * The UI and camera overlay depend on this contract, not on a specific ML runtime.
+ * Adapter boundary for a future MediaPipe / MoveNet / ML Kit implementation.
+ * The product UI only consumes GuideSpec and does not depend on a particular ML runtime.
  */
 export interface PoseDetector {
   detectReference(uri: string): Promise<PoseDetection>;
@@ -43,11 +43,19 @@ export class HeuristicGuideGenerator implements GuideGenerator {
     const hipMid = leftHip && rightHip
       ? { x: (leftHip.x + rightHip.x) / 2, y: (leftHip.y + rightHip.y) / 2 }
       : { x: shoulderMid.x, y: Math.min(0.9, shoulderMid.y + 0.34) };
-    const shoulderWidth = Math.abs(rightShoulder.x - leftShoulder.x);
+    const shoulderWidth = Math.max(0.12, Math.abs(rightShoulder.x - leftShoulder.x));
     const faceRx = Math.max(0.045, Math.min(0.12, shoulderWidth * 0.31));
 
-    return {
-      mode: 'simple',
+    const maybe = (name: string) => byName.get(name);
+    const joints: PoseJoints = {
+      leftElbow: maybe('left_elbow'), rightElbow: maybe('right_elbow'),
+      leftWrist: maybe('left_wrist'), rightWrist: maybe('right_wrist'),
+      leftHip, rightHip,
+      leftKnee: maybe('left_knee'), rightKnee: maybe('right_knee'),
+      leftAnkle: maybe('left_ankle'), rightAnkle: maybe('right_ankle'),
+    };
+
+    const person: PersonGuide = {
       head: {
         center: { x: nose.x, y: Math.max(0.06, nose.y - faceRx * 0.1) },
         rx: faceRx,
@@ -56,8 +64,16 @@ export class HeuristicGuideGenerator implements GuideGenerator {
       },
       shoulders: { left: leftShoulder, right: rightShoulder },
       torso: { top: shoulderMid, bottom: hipMid, width: shoulderWidth },
-      crop: hipMid.y > 0.82 ? 'half' : 'three-quarter',
+      joints,
+    };
+
+    return {
+      kind: 'portrait',
+      mode: 'simple',
+      people: [person],
+      crop: joints.leftAnkle || joints.rightAnkle ? 'full' : hipMid.y > 0.82 ? 'half' : 'three-quarter',
       lookSpace: nose.x < shoulderMid.x - 0.015 ? 'left' : nose.x > shoulderMid.x + 0.015 ? 'right' : 'center',
+      transform: { dx: 0, dy: 0, scale: 1 },
     };
   }
 }
