@@ -88,6 +88,7 @@ export default function App() {
   const cameraRef = useRef<CameraView | null>(null);
   const liveBusyRef = useRef(false);
   const photoCaptureRef = useRef(false);
+  const liveSessionRef = useRef(0);
   const matchStabilityRef = useRef<MatchStabilityState>(resetMatchStability());
   const referencePrepareGenerationRef = useRef(0);
   const selectedPresetRef = useRef<GuidePreset>(DEFAULT_GUIDE.visualStyle ?? 'sovs');
@@ -127,6 +128,13 @@ export default function App() {
     setMatchStability(reset);
     setLiveFeedback(null);
   };
+
+  const invalidateLiveSession = () => {
+    liveSessionRef.current += 1;
+  };
+
+  const isCurrentLiveRequest = (request: OutlineAnalysisRequest) =>
+    request.sessionId != null && request.sessionId === liveSessionRef.current;
 
   const setGuidePreset = (preset: GuidePreset) => {
     selectedPresetRef.current = preset;
@@ -272,6 +280,8 @@ export default function App() {
         return;
       }
     }
+    invalidateLiveSession();
+    liveBusyRef.current = false;
     setCapturedUri(null);
     setCaptureSource(null);
     setAutoCaptureEnabled(false);
@@ -283,6 +293,7 @@ export default function App() {
   };
 
   const leaveCamera = () => {
+    invalidateLiveSession();
     cleanupRequestFiles(liveRequest);
     setCameraReady(false);
     setLiveRequest(null);
@@ -292,13 +303,14 @@ export default function App() {
   };
 
   const toggleLiveCoach = () => {
+    invalidateLiveSession();
     resetLiveStability();
+    cleanupRequestFiles(liveRequest);
+    setLiveRequest(null);
+    liveBusyRef.current = false;
     if (liveEnabled) {
-      cleanupRequestFiles(liveRequest);
-      setLiveRequest(null);
       setAutoCaptureEnabled(false);
       setLiveError('');
-      liveBusyRef.current = false;
       setLiveEnabled(false);
       return;
     }
@@ -312,8 +324,12 @@ export default function App() {
     setAutoCaptureEnabled(nextEnabled);
     setLiveError('');
     if (nextEnabled) {
-      // Auto Capture must earn fresh stability after explicit opt-in; do not
-      // consume a Stable state accumulated while Auto Capture was still off.
+      // Auto Capture must earn fresh stability after explicit opt-in. Invalidate
+      // any sampled image/analysis that began before the photographer opted in.
+      invalidateLiveSession();
+      cleanupRequestFiles(liveRequest);
+      setLiveRequest(null);
+      liveBusyRef.current = false;
       resetLiveStability();
     }
   };
@@ -324,8 +340,10 @@ export default function App() {
       setLiveError('Camera is finishing another capture. Try the shutter again.');
       return;
     }
+    invalidateLiveSession();
     cleanupRequestFiles(liveRequest);
     setLiveRequest(null);
+    resetLiveStability();
     setLiveError('');
     photoCaptureRef.current = true;
     try {
@@ -344,6 +362,11 @@ export default function App() {
   };
 
   const onLiveResult = async (request: OutlineAnalysisRequest, detection: PersonContourDetection) => {
+    if (!isCurrentLiveRequest(request)) {
+      cleanupRequestFiles(request);
+      return;
+    }
+
     try {
       const liveGuide = buildGuideFromContour(detection, request.aspectRatio);
       const feedback = scorePortraitMatch(guide, liveGuide);
@@ -363,28 +386,35 @@ export default function App() {
         photoCaptureRef.current = true;
         try {
           const photo = await cameraRef.current.takePictureAsync({ quality: 0.92 });
-          if (photo?.uri) {
+          if (isCurrentLiveRequest(request) && photo?.uri) {
             setCapturedUri(photo.uri);
             setCaptureSource('auto');
           }
         } catch {
-          setLiveError('Auto capture failed. Use the shutter to take the photo.');
+          if (isCurrentLiveRequest(request)) {
+            setLiveError('Auto capture failed. Use the shutter to take the photo.');
+          }
         } finally {
           photoCaptureRef.current = false;
         }
       }
     } catch (error) {
-      resetLiveStability();
-      setLiveError(error instanceof Error ? error.message : 'Could not match the live subject.');
+      if (isCurrentLiveRequest(request)) {
+        resetLiveStability();
+        setLiveError(error instanceof Error ? error.message : 'Could not match the live subject.');
+      }
     } finally {
       cleanupRequestFiles(request);
-      setLiveRequest(null);
-      liveBusyRef.current = false;
+      if (isCurrentLiveRequest(request)) {
+        setLiveRequest(null);
+        liveBusyRef.current = false;
+      }
     }
   };
 
   const onLiveError = (request: OutlineAnalysisRequest, message: string) => {
     cleanupRequestFiles(request);
+    if (!isCurrentLiveRequest(request)) return;
     resetLiveStability();
     setLiveError(message);
     setLiveRequest(null);
@@ -396,6 +426,7 @@ export default function App() {
     let cancelled = false;
     const sampleFrame = async () => {
       if (cancelled || liveBusyRef.current || photoCaptureRef.current || !cameraRef.current) return;
+      const sessionId = liveSessionRef.current;
       liveBusyRef.current = true;
       let sourceUri: string | null = null;
       let preparedUri: string | null = null;
@@ -408,35 +439,40 @@ export default function App() {
           photoCaptureRef.current = false;
         }
         if (!frame?.uri) {
-          liveBusyRef.current = false;
-          resetLiveStability();
-          setLiveError('Live analysis frame was unavailable.');
+          if (sessionId === liveSessionRef.current) {
+            liveBusyRef.current = false;
+            resetLiveStability();
+            setLiveError('Live analysis frame was unavailable.');
+          }
           return;
         }
         sourceUri = frame.uri;
         const prepared = await prepareAnalysisImage(frame.uri, frame.width, frame.height, 720, 0.52);
         preparedUri = prepared.temporaryUri ?? null;
-        if (cancelled) {
+        if (cancelled || sessionId !== liveSessionRef.current) {
           cleanupTemporaryUri(sourceUri);
           cleanupTemporaryUri(preparedUri);
-          liveBusyRef.current = false;
           return;
         }
-        setLiveRequest({
+        const request: OutlineAnalysisRequest = {
           id: `live-${Date.now()}-${Math.random().toString(36).slice(2)}`,
           dataUrl: prepared.dataUrl,
           sourceUri: frame.uri,
           aspectRatio: frame.width && frame.height ? frame.width / frame.height : (guide.aspectRatio ?? 0.75),
+          sessionId,
           cleanupUris: [sourceUri, preparedUri].filter((uri): uri is string => Boolean(uri)),
-        });
+        };
+        setLiveRequest(request);
       } catch (error) {
         photoCaptureRef.current = false;
         cleanupTemporaryUri(sourceUri);
         cleanupTemporaryUri(preparedUri);
-        liveBusyRef.current = false;
-        if (!cancelled) {
-          resetLiveStability();
-          setLiveError(error instanceof Error ? error.message : 'Live sampling failed.');
+        if (sessionId === liveSessionRef.current) {
+          liveBusyRef.current = false;
+          if (!cancelled) {
+            resetLiveStability();
+            setLiveError(error instanceof Error ? error.message : 'Live sampling failed.');
+          }
         }
       }
     };
