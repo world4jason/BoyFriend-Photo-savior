@@ -8,6 +8,10 @@ export type PersonContourDetection = {
   foregroundRatio: number;
   /** Optional internal geometry from MediaPipe Pose Landmarker. Never rendered as a stick skeleton. */
   poseLandmarks?: PoseLandmark[];
+  /** Optional higher-precision face direction from MediaPipe Face Landmarker. */
+  faceDirection?: PersonGuide['head']['facing'];
+  /** Approximate horizontal head turn. This is advisory rather than a calibrated camera angle. */
+  faceYawDegrees?: number;
 };
 
 const clamp = (value: number, min = 0, max = 1) => Math.max(min, Math.min(max, value));
@@ -127,7 +131,7 @@ export function buildGuideFromContour(
     rightAnkle: visible('right_ankle'),
   };
 
-  const facing = inferFacing(byName);
+  const facing = detection.faceDirection ?? inferFacing(byName);
 
   const person: PersonGuide = {
     contour: detection.contour,
