@@ -10,14 +10,16 @@ export type OutlineAnalysisRequest = {
   dataUrl: string;
   sourceUri: string;
   aspectRatio: number;
+  /** Camera-session identity for live analysis requests; absent for reference analysis. */
+  sessionId?: number;
   /** Local cache files that can be deleted after analysis completes. */
   cleanupUris?: string[];
 };
 
 type Props = {
   request: OutlineAnalysisRequest | null;
-  onResult: (request: OutlineAnalysisRequest, result: PersonContourDetection) => void;
-  onError: (request: OutlineAnalysisRequest, message: string) => void;
+  onResult: (request: OutlineAnalysisRequest, result: PersonContourDetection) => void | Promise<void>;
+  onError: (request: OutlineAnalysisRequest, message: string) => void | Promise<void>;
 };
 
 /**
@@ -34,12 +36,12 @@ export function PersonOutlineAnalyzer({ request, onResult, onError }: Props) {
 
   const handleResult = async (payload: AnalyzerResultPayload) => {
     if (payload.requestId !== request.id) return;
-    onResult(request, payload.detection);
+    await onResult(request, payload.detection);
   };
 
   const handleError = async (payload: AnalyzerErrorPayload) => {
     if (payload.requestId !== request.id) return;
-    onError(request, payload.message || 'Outline analysis failed.');
+    await onError(request, payload.message || 'Outline analysis failed.');
   };
 
   return (
