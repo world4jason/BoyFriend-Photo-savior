@@ -2,27 +2,45 @@
 
 ## Purpose
 
-Defines photography-oriented sampled alignment feedback for portrait targets without overstating frame rate or turning pose matching into exercise-form scoring.
+Defines photography-oriented sampled alignment feedback for eligible single-person portrait targets without overstating frame rate or turning pose matching into exercise-form scoring.
 
 ## Requirements
 
-### Requirement: Portrait-only sampled coaching in the MVP
-The current Live Coach SHALL run only for portrait targets and SHALL be labeled as sampled rather than continuous real-time tracking.
+### Requirement: Single-person portrait sampled coaching in the MVP
+The current Live Coach SHALL run only for single-person portrait targets and SHALL be labeled as sampled rather than continuous real-time tracking.
 
-#### Scenario: Portrait camera opens
-- **WHEN** a portrait guide enters the camera and Live Coach is enabled
+#### Scenario: Single-person portrait camera opens
+- **WHEN** a one-person portrait guide enters the camera and Live Coach is enabled
 - **THEN** the app periodically samples camera stills for local analysis and labels the feature `LIVE COACH · SAMPLED`
 
 #### Scenario: Food or scene camera opens
 - **WHEN** a food or scene guide enters the camera
 - **THEN** portrait pose matching is not invoked
 
+#### Scenario: Duo or group portrait opens
+- **WHEN** a portrait target contains more than one person
+- **THEN** the overlay remains usable manually but Live Coach cannot produce a matched state or unlock Auto Capture
+
 ### Requirement: Photography-oriented match components
-Live Coach SHALL prioritize framing and scale, then use pose and face direction when those signals are available.
+Live Coach SHALL prioritize framing and scale, then use pose and face direction when those signals are represented by the target.
 
 #### Scenario: Subject is horizontally displaced
 - **WHEN** the live subject center is meaningfully left or right of the target
 - **THEN** the primary hint tells the photographer to move the subject horizontally before smaller pose corrections
+
+### Requirement: Match coordinates follow rendered camera geometry
+Framing and scale scoring SHALL compare target and live geometry in the same camera-frame coordinate space used by the visible guide.
+
+#### Scenario: Reference and camera aspect ratios differ
+- **WHEN** a 3:4 reference is aspect-fitted into a taller phone camera preview
+- **THEN** the matcher applies the equivalent aspect-fit mapping before evaluating position and scale so a visually aligned subject is not told to move or resize because of coordinate-space mismatch
+
+### Requirement: Target pose intent requires a live pose signal
+When the target contains enough body-joint anchors to encode a meaningful pose, the final raw matched state SHALL require a usable live pose comparison rather than silently falling back to framing-only matching.
+
+#### Scenario: Pose landmarks disappear
+- **WHEN** the target encodes pose anchors but the current live sample does not expose enough corresponding landmarks
+- **THEN** the raw status remains non-matched and the camera asks the photographer to keep enough of the pose visible for verification
 
 ### Requirement: One primary instruction
 Live Coach SHALL present one prioritized actionable correction at a time.
@@ -85,16 +103,16 @@ When the camera can no longer produce a trustworthy live analysis result, the fi
 - **WHEN** a sampled frame cannot be captured or analyzed into a usable portrait guide
 - **THEN** temporal stable state and stale match feedback are cleared until a new valid sample arrives
 
-### Requirement: Auto Capture is explicit and portrait-only
-Auto Capture SHALL be available only for portrait Live Coach sessions and SHALL default to OFF whenever a camera session opens.
+### Requirement: Auto Capture is explicit and eligible-portrait-only
+Auto Capture SHALL be available only for eligible single-person portrait Live Coach sessions and SHALL default to OFF whenever a camera session opens.
 
-#### Scenario: Portrait camera opens
-- **WHEN** the portrait camera screen opens
+#### Scenario: Eligible portrait camera opens
+- **WHEN** a one-person portrait camera screen opens
 - **THEN** Auto Capture is OFF until the photographer explicitly enables it
 
-#### Scenario: Food or scene camera opens
-- **WHEN** a food or scene guide opens the camera
-- **THEN** Auto Capture is unavailable
+#### Scenario: Food, scene, duo, or group camera opens
+- **WHEN** a target is not an eligible one-person portrait
+- **THEN** Auto Capture cannot produce an automatic shot
 
 ### Requirement: Enabling Auto Capture requires fresh stability
 Enabling Auto Capture SHALL invalidate prior temporal stability and require a new stable period after opt-in.
