@@ -11,6 +11,8 @@ type Props = {
   visualStyle?: GuidePreset;
 };
 
+type PixelPoint = { x: number; y: number };
+
 type VisualConfig = {
   stroke: string;
   secondary: string;
@@ -55,6 +57,7 @@ export function GuideOverlay({ guide, width, height, opacity = 0.94, visualStyle
   const ty = (y: number) => frame.y + (((y - 0.5) * transform.scale) + 0.5 + transform.dy) * frame.height;
   const rx = (r: number) => r * frame.width * transform.scale;
   const ry = (r: number) => r * frame.height * transform.scale;
+  const pixel = (p?: NormalizedPoint): PixelPoint | null => p ? { x: tx(p.x), y: ty(p.y) } : null;
 
   const contourPath = (contour: NormalizedPoint[]) =>
     contour.length < 3 ? '' : contour.map((p, i) => `${i === 0 ? 'M' : 'L'} ${tx(p.x)} ${ty(p.y)}`).join(' ') + ' Z';
@@ -74,7 +77,13 @@ export function GuideOverlay({ guide, width, height, opacity = 0.94, visualStyle
     );
   };
 
-  const segment = (a: NormalizedPoint | undefined, b: NormalizedPoint | undefined, key: string, strokeWidth = visual.strokeWidth) => {
+  /** Center-line segment used only by the explicit Skeleton mode. */
+  const skeletonSegment = (
+    a: NormalizedPoint | undefined,
+    b: NormalizedPoint | undefined,
+    key: string,
+    strokeWidth = visual.strokeWidth,
+  ) => {
     if (!a || !b) return null;
     return (
       <Line
@@ -84,7 +93,55 @@ export function GuideOverlay({ guide, width, height, opacity = 0.94, visualStyle
     );
   };
 
-  const fallbackOutline = (person: PersonGuide, index: number) => {
+  /**
+   * Approximate body envelope for template seeds that do not have a segmentation
+   * contour. Outline draws two outside edges; Ghost draws a translucent filled tube.
+   */
+  const envelopeLimb = (
+    a: NormalizedPoint | undefined,
+    b: NormalizedPoint | undefined,
+    key: string,
+    radiusScale = 1,
+  ) => {
+    const pa = pixel(a);
+    const pb = pixel(b);
+    if (!pa || !pb) return null;
+
+    const dx = pb.x - pa.x;
+    const dy = pb.y - pa.y;
+    const length = Math.max(1, Math.hypot(dx, dy));
+    const radius = Math.max(4, Math.min(11, frame.width * 0.014)) * transform.scale * radiusScale;
+
+    if (style === 'poseghost') {
+      return (
+        <Line
+          key={key}
+          x1={pa.x} y1={pa.y} x2={pb.x} y2={pb.y}
+          stroke={visual.stroke} strokeWidth={radius * 2.15}
+          strokeLinecap="round" strokeOpacity={Math.max(0.20, opacity * 0.34)}
+        />
+      );
+    }
+
+    const ox = (-dy / length) * radius;
+    const oy = (dx / length) * radius;
+    return (
+      <React.Fragment key={key}>
+        <Line
+          x1={pa.x + ox} y1={pa.y + oy} x2={pb.x + ox} y2={pb.y + oy}
+          stroke={visual.stroke} strokeWidth={visual.strokeWidth * 0.76}
+          strokeLinecap="round" strokeOpacity={opacity}
+        />
+        <Line
+          x1={pa.x - ox} y1={pa.y - oy} x2={pb.x - ox} y2={pb.y - oy}
+          stroke={visual.stroke} strokeWidth={visual.strokeWidth * 0.76}
+          strokeLinecap="round" strokeOpacity={opacity}
+        />
+      </React.Fragment>
+    );
+  };
+
+  const fallbackEnvelope = (person: PersonGuide, index: number) => {
     const joints = person.joints ?? {};
     const hipL = joints.leftHip ?? { x: person.torso.bottom.x - person.torso.width * 0.32, y: person.torso.bottom.y };
     const hipR = joints.rightHip ?? { x: person.torso.bottom.x + person.torso.width * 0.32, y: person.torso.bottom.y };
@@ -97,25 +154,26 @@ export function GuideOverlay({ guide, width, height, opacity = 0.94, visualStyle
       'Z',
     ].join(' ');
 
+    const ghostFill = style === 'poseghost' ? Math.max(0.13, visual.fillOpacity) : 0;
     return (
       <React.Fragment key={`fallback-${index}`}>
         <Ellipse
           cx={tx(person.head.center.x)} cy={ty(person.head.center.y)} rx={rx(person.head.rx)} ry={ry(person.head.ry)}
-          fill={visual.stroke} fillOpacity={visual.fillOpacity} stroke={visual.stroke}
+          fill={visual.stroke} fillOpacity={ghostFill} stroke={visual.stroke}
           strokeWidth={visual.strokeWidth} strokeOpacity={opacity}
         />
         <Path
-          d={torso} fill={visual.stroke} fillOpacity={visual.fillOpacity} stroke={visual.stroke}
+          d={torso} fill={visual.stroke} fillOpacity={ghostFill} stroke={visual.stroke}
           strokeWidth={visual.strokeWidth} strokeLinejoin="round" strokeOpacity={opacity}
         />
-        {segment(person.shoulders.left, joints.leftElbow, `${index}-lua`, visual.strokeWidth * 0.8)}
-        {segment(joints.leftElbow, joints.leftWrist, `${index}-lla`, visual.strokeWidth * 0.7)}
-        {segment(person.shoulders.right, joints.rightElbow, `${index}-rua`, visual.strokeWidth * 0.8)}
-        {segment(joints.rightElbow, joints.rightWrist, `${index}-rla`, visual.strokeWidth * 0.7)}
-        {segment(hipL, joints.leftKnee, `${index}-lt`, visual.strokeWidth * 0.9)}
-        {segment(joints.leftKnee, joints.leftAnkle, `${index}-lc`, visual.strokeWidth * 0.8)}
-        {segment(hipR, joints.rightKnee, `${index}-rt`, visual.strokeWidth * 0.9)}
-        {segment(joints.rightKnee, joints.rightAnkle, `${index}-rc`, visual.strokeWidth * 0.8)}
+        {envelopeLimb(person.shoulders.left, joints.leftElbow, `${index}-lua`)}
+        {envelopeLimb(joints.leftElbow, joints.leftWrist, `${index}-lla`, 0.78)}
+        {envelopeLimb(person.shoulders.right, joints.rightElbow, `${index}-rua`)}
+        {envelopeLimb(joints.rightElbow, joints.rightWrist, `${index}-rla`, 0.78)}
+        {envelopeLimb(hipL, joints.leftKnee, `${index}-lt`, 1.05)}
+        {envelopeLimb(joints.leftKnee, joints.leftAnkle, `${index}-lc`, 0.82)}
+        {envelopeLimb(hipR, joints.rightKnee, `${index}-rt`, 1.05)}
+        {envelopeLimb(joints.rightKnee, joints.rightAnkle, `${index}-rc`, 0.82)}
       </React.Fragment>
     );
   };
@@ -140,7 +198,7 @@ export function GuideOverlay({ guide, width, height, opacity = 0.94, visualStyle
               strokeLinejoin="round" strokeLinecap="round"
             />
           </>
-        ) : fallbackOutline(person, index)}
+        ) : fallbackEnvelope(person, index)}
         {faceCue(person, `face-${index}`)}
       </React.Fragment>
     );
@@ -163,9 +221,10 @@ export function GuideOverlay({ guide, width, height, opacity = 0.94, visualStyle
       [hipL, joints.leftKnee, 'lt'], [joints.leftKnee, joints.leftAnkle, 'lc'],
       [hipR, joints.rightKnee, 'rt'], [joints.rightKnee, joints.rightAnkle, 'rc'],
     ];
-    const nodes = [person.head.center, person.shoulders.left, person.shoulders.right, joints.leftElbow, joints.rightElbow,
-      joints.leftWrist, joints.rightWrist, hipL, hipR, joints.leftKnee, joints.rightKnee, joints.leftAnkle, joints.rightAnkle]
-      .filter(Boolean) as NormalizedPoint[];
+    const nodes = [
+      person.head.center, person.shoulders.left, person.shoulders.right, joints.leftElbow, joints.rightElbow,
+      joints.leftWrist, joints.rightWrist, hipL, hipR, joints.leftKnee, joints.rightKnee, joints.leftAnkle, joints.rightAnkle,
+    ].filter(Boolean) as NormalizedPoint[];
 
     return (
       <React.Fragment key={`skeleton-${index}`}>
@@ -174,7 +233,7 @@ export function GuideOverlay({ guide, width, height, opacity = 0.94, visualStyle
           rx={Math.max(8, rx(person.head.rx) * 0.72)} ry={Math.max(10, ry(person.head.ry) * 0.72)}
           fill="none" stroke={visual.stroke} strokeWidth={visual.strokeWidth} strokeOpacity={opacity}
         />
-        {segments.map(([a, b, name]) => segment(a, b, `${index}-${name}`))}
+        {segments.map(([a, b, name]) => skeletonSegment(a, b, `${index}-${name}`))}
         {nodes.map((node, nodeIndex) => (
           <Circle
             key={`${index}-node-${nodeIndex}`} cx={tx(node.x)} cy={ty(node.y)} r={4.5}
