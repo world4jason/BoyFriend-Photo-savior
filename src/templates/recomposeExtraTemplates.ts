@@ -7,11 +7,17 @@ const head = (x: number, y: number, facing: PersonGuide['head']['facing'] = 'fro
   center: { x, y }, rx: 0.064, ry: 0.084, facing,
 });
 
+/** Selfie geometry still carries enough body anchors to remain useful if the user switches display mode. */
 const selfiePerson = (x: number, facing: PersonGuide['head']['facing'] = 'front'): PersonGuide => ({
   head: head(x, 0.31, facing),
   shoulders: { left: { x: x - 0.14, y: 0.45 }, right: { x: x + 0.14, y: 0.45 } },
   torso: { top: { x, y: 0.46 }, bottom: { x, y: 0.82 }, width: 0.25 },
-  joints: { leftHip: { x: x - 0.08, y: 0.80 }, rightHip: { x: x + 0.08, y: 0.80 } },
+  joints: {
+    leftElbow: { x: x - 0.18, y: 0.58 }, leftWrist: { x: x - 0.12, y: 0.72 },
+    rightElbow: { x: x + 0.18, y: 0.58 }, rightWrist: { x: x + 0.12, y: 0.72 },
+    leftHip: { x: x - 0.08, y: 0.80 }, rightHip: { x: x + 0.08, y: 0.80 },
+    leftKnee: { x: x - 0.08, y: 0.96 }, rightKnee: { x: x + 0.08, y: 0.96 },
+  },
 });
 
 const portrait = (people: PersonGuide[], lookSpace: GuideSpec['lookSpace'] = 'center'): GuideSpec => ({
