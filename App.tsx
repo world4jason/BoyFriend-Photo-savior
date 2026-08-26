@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Alert,
   Image,
@@ -14,6 +14,7 @@ import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
 import { StatusBar } from 'expo-status-bar';
 import { GuideOverlay } from './src/GuideOverlay';
+import { MatchFeedback, scorePortraitMatch } from './src/matching/guideMatch';
 import { SAMPLE_REFERENCES, SampleReference } from './src/sampleReferences';
 import {
   OutlineAnalysisRequest,
@@ -44,7 +45,15 @@ export default function App() {
   const [analysisRequest, setAnalysisRequest] = useState<OutlineAnalysisRequest | null>(null);
   const [analysisStatus, setAnalysisStatus] = useState<AnalysisStatus>('idle');
   const [analysisMessage, setAnalysisMessage] = useState('');
+
+  const [cameraReady, setCameraReady] = useState(false);
+  const [liveEnabled, setLiveEnabled] = useState(true);
+  const [liveRequest, setLiveRequest] = useState<OutlineAnalysisRequest | null>(null);
+  const [liveFeedback, setLiveFeedback] = useState<MatchFeedback | null>(null);
+  const [liveError, setLiveError] = useState('');
+
   const cameraRef = useRef<CameraView | null>(null);
+  const liveBusyRef = useRef(false);
 
   const previewWidth = Math.min(Math.max(width - 24, 280), 620);
   const previewHeight = Math.min(height * 0.60, 680);
@@ -76,20 +85,19 @@ export default function App() {
 
     if (!asset.base64) {
       setAnalysisStatus('error');
-      setAnalysisMessage('This device did not provide image bytes for automatic outline extraction. The editable outer-contour fallback is shown instead.');
+      setAnalysisMessage('This device did not provide image bytes for automatic outline extraction. The editable fallback is shown instead.');
       return;
     }
 
-    const mime = asset.mimeType?.startsWith('image/') ? asset.mimeType : 'image/jpeg';
     const request: OutlineAnalysisRequest = {
-      id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
-      dataUrl: `data:${mime};base64,${asset.base64}`,
+      id: `ref-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      dataUrl: `data:image/jpeg;base64,${asset.base64}`,
       sourceUri: asset.uri,
       aspectRatio,
     };
 
     setAnalysisStatus('analyzing');
-    setAnalysisMessage('Extracting the person silhouette…');
+    setAnalysisMessage('Extracting silhouette + pose + face direction…');
     setAnalysisRequest(request);
   };
 
@@ -98,7 +106,11 @@ export default function App() {
       const nextGuide = buildGuideFromContour(detection, request.aspectRatio, request.sourceUri);
       setGuide(nextGuide);
       setAnalysisStatus('ready');
-      setAnalysisMessage(`Outer contour ready · ${detection.contour.length} guide points`);
+      const extras = [
+        detection.poseLandmarks?.length ? 'pose' : null,
+        detection.faceDirection ? `face ${detection.faceDirection}` : null,
+      ].filter(Boolean).join(' · ');
+      setAnalysisMessage(`Outer contour ready · ${detection.contour.length} points${extras ? ` · ${extras}` : ''}`);
     } catch (error) {
       setAnalysisStatus('error');
       setAnalysisMessage(error instanceof Error ? error.message : 'Could not build an outer contour.');
@@ -122,7 +134,7 @@ export default function App() {
     setReferenceUri(sample.imageUrl);
     setActiveSample(sample);
     setAnalysisStatus('preset');
-    setAnalysisMessage('Preset outer contour · no skeleton is shown');
+    setAnalysisMessage('Preset outer contour · ready to test in camera');
     setShowReference(true);
     setScreen('reference');
   };
@@ -151,22 +163,107 @@ export default function App() {
     if (!permission?.granted) {
       const next = await requestPermission();
       if (!next.granted) {
-        Alert.alert('Camera permission required', 'Camera access is needed to line up the live subject with the outer contour.');
+        Alert.alert('Camera permission required', 'Camera access is needed to line up the live subject with the guide.');
         return;
       }
     }
     setCapturedUri(null);
+    setCameraReady(false);
+    setLiveFeedback(null);
+    setLiveError('');
+    setLiveEnabled(guide.kind === 'portrait');
     setScreen('camera');
   };
 
+  const leaveCamera = () => {
+    setCameraReady(false);
+    setLiveRequest(null);
+    setLiveFeedback(null);
+    liveBusyRef.current = false;
+    setScreen('reference');
+  };
+
   const takePhoto = async () => {
+    if (!cameraRef.current) return;
     try {
-      const photo = await cameraRef.current?.takePictureAsync({ quality: 0.92 });
+      liveBusyRef.current = true;
+      const photo = await cameraRef.current.takePictureAsync({ quality: 0.92 });
       if (photo?.uri) setCapturedUri(photo.uri);
     } catch {
       Alert.alert('Could not capture photo', 'Please check camera permission and try again.');
+    } finally {
+      liveBusyRef.current = false;
     }
   };
+
+  const onLiveResult = (request: OutlineAnalysisRequest, detection: PersonContourDetection) => {
+    try {
+      const liveGuide = buildGuideFromContour(detection, request.aspectRatio);
+      setLiveFeedback(scorePortraitMatch(guide, liveGuide));
+      setLiveError('');
+    } catch (error) {
+      setLiveFeedback(null);
+      setLiveError(error instanceof Error ? error.message : 'Could not match the live subject.');
+    } finally {
+      setLiveRequest(null);
+      liveBusyRef.current = false;
+    }
+  };
+
+  const onLiveError = (_request: OutlineAnalysisRequest, message: string) => {
+    setLiveFeedback(null);
+    setLiveError(message);
+    setLiveRequest(null);
+    liveBusyRef.current = false;
+  };
+
+  useEffect(() => {
+    if (screen !== 'camera' || !cameraReady || !liveEnabled || guide.kind !== 'portrait') return;
+
+    let cancelled = false;
+
+    const sampleFrame = async () => {
+      if (cancelled || liveBusyRef.current || !cameraRef.current) return;
+      liveBusyRef.current = true;
+
+      try {
+        const frame = await cameraRef.current.takePictureAsync({
+          quality: 0.18,
+          base64: true,
+          shutterSound: false,
+        });
+
+        if (cancelled) {
+          liveBusyRef.current = false;
+          return;
+        }
+        if (!frame?.base64) {
+          liveBusyRef.current = false;
+          setLiveError('Live analysis frame was unavailable.');
+          return;
+        }
+
+        setLiveRequest({
+          id: `live-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+          dataUrl: `data:image/jpeg;base64,${frame.base64}`,
+          sourceUri: frame.uri,
+          aspectRatio: frame.width && frame.height ? frame.width / frame.height : (guide.aspectRatio ?? 0.75),
+        });
+      } catch (error) {
+        liveBusyRef.current = false;
+        if (!cancelled) setLiveError(error instanceof Error ? error.message : 'Live sampling failed.');
+      }
+    };
+
+    const first = setTimeout(sampleFrame, 700);
+    const timer = setInterval(sampleFrame, 1700);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(first);
+      clearInterval(timer);
+    };
+  }, [screen, cameraReady, liveEnabled, guide.kind, guide.aspectRatio, guide.transform.dx, guide.transform.dy, guide.transform.scale]);
 
   const analyzer = (
     <PersonOutlineAnalyzer
@@ -176,12 +273,20 @@ export default function App() {
     />
   );
 
+  const liveAnalyzer = (
+    <PersonOutlineAnalyzer
+      request={liveRequest}
+      onResult={onLiveResult}
+      onError={onLiveError}
+    />
+  );
+
   const adjustmentControls = (
     <View style={styles.controlPanel}>
       {guide.kind === 'portrait' ? (
         <View style={styles.outlineOnlyBanner}>
-          <Text style={styles.outlineOnlyTitle}>HUMAN GUIDE · OUTER CONTOUR ONLY</Text>
-          <Text style={styles.outlineOnlyText}>No pose skeleton is rendered. Internal landmarks are allowed only to estimate the silhouette.</Text>
+          <Text style={styles.outlineOnlyTitle}>HUMAN GUIDE · OUTER CONTOUR</Text>
+          <Text style={styles.outlineOnlyText}>Pose and face landmarks stay hidden. They only improve the guide geometry and live coaching.</Text>
         </View>
       ) : (
         <View style={styles.modeRow}>
@@ -217,7 +322,7 @@ export default function App() {
         <ScrollView contentContainerStyle={styles.homeContent}>
           <Text style={styles.eyebrow}>BOYFRIEND PHOTO SAVIOR · MVP</Text>
           <Text style={styles.hero}>Match the outline, not the memory.</Text>
-          <Text style={styles.subhead}>Choose a reference photo. For people, the app extracts a clean outer contour and places that contour over the live camera.</Text>
+          <Text style={styles.subhead}>Reference photo → clean outer guide → live camera coaching. The photographer never needs to memorize the pose.</Text>
 
           <Pressable style={styles.primaryButton} onPress={pickReference}>
             <Text style={styles.primaryButtonText}>Use my reference photo</Text>
@@ -225,7 +330,7 @@ export default function App() {
 
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Instant examples</Text>
-            <Text style={styles.sectionCaption}>Portrait examples always render as outer contours. Food uses object zones.</Text>
+            <Text style={styles.sectionCaption}>Portraits use step-in outlines. Food uses composition zones.</Text>
           </View>
 
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.sampleRow}>
@@ -243,12 +348,12 @@ export default function App() {
           </ScrollView>
 
           <View style={styles.howCard}>
-            <View style={styles.howStep}><Text style={styles.howNumber}>1</Text><Text style={styles.howText}>Import the photo you want to recreate.</Text></View>
-            <View style={styles.howStep}><Text style={styles.howNumber}>2</Text><Text style={styles.howText}>Person segmentation becomes a closed outer contour.</Text></View>
-            <View style={styles.howStep}><Text style={styles.howNumber}>3</Text><Text style={styles.howText}>Open the camera and put the real subject inside the line.</Text></View>
+            <View style={styles.howStep}><Text style={styles.howNumber}>1</Text><Text style={styles.howText}>Import a photo you want to recreate.</Text></View>
+            <View style={styles.howStep}><Text style={styles.howNumber}>2</Text><Text style={styles.howText}>AI reduces it to an outside contour + hidden pose metadata.</Text></View>
+            <View style={styles.howStep}><Text style={styles.howNumber}>3</Text><Text style={styles.howText}>Camera samples the subject and tells you the next adjustment.</Text></View>
           </View>
 
-          <Text style={styles.note}>Automatic custom-photo outline currently targets one primary person. Multi-person automatic instance separation comes later.</Text>
+          <Text style={styles.note}>Current automatic portrait flow targets one primary person. Multi-person automatic instance separation comes later.</Text>
         </ScrollView>
       </SafeAreaView>
     );
@@ -286,16 +391,16 @@ export default function App() {
           <View style={[styles.statusCard, statusTone]}>
             <Text style={styles.statusTitle}>
               {analysisStatus === 'analyzing'
-                ? 'Analyzing person outline'
+                ? 'Analyzing reference'
                 : analysisStatus === 'ready'
-                  ? 'Automatic outline ready'
+                  ? 'Automatic guide ready'
                   : analysisStatus === 'error'
-                    ? 'Automatic outline unavailable'
+                    ? 'Automatic guide unavailable'
                     : analysisStatus === 'preset'
-                      ? 'Preset outline'
+                      ? 'Preset guide'
                       : 'Outer contour'}
             </Text>
-            <Text style={styles.statusText}>{analysisMessage || 'Human guides are always rendered as outside contours.'}</Text>
+            <Text style={styles.statusText}>{analysisMessage || 'Human guides are rendered as outside contours.'}</Text>
           </View>
 
           <View style={styles.referenceMeta}>
@@ -304,8 +409,8 @@ export default function App() {
             </Text>
             <Text style={styles.referenceMetaText}>
               {guide.kind === 'food'
-                ? 'Start with the largest object, then match the secondary-object spacing and relative size.'
-                : 'Match the overall outside shape first: head height, shoulders, hands, torso and legs. No skeleton is shown in the shooting view.'}
+                ? 'Start with the largest object, then match secondary-object spacing and relative size.'
+                : 'Match the outside shape first. Live Coach will then prioritize position, scale, face direction and pose.'}
             </Text>
           </View>
 
@@ -320,26 +425,56 @@ export default function App() {
     );
   }
 
+  const matchLabel = guide.kind === 'portrait'
+    ? liveFeedback
+      ? `${liveFeedback.score}% · ${liveFeedback.status.toUpperCase()}`
+      : liveEnabled
+        ? 'SCANNING…'
+        : 'LIVE COACH OFF'
+    : 'MATCH OBJECT ZONES';
+
+  const liveHint = guide.kind === 'food'
+    ? 'Match size + spacing. Ignore styling details.'
+    : liveFeedback?.hint ?? (liveError ? 'Find the subject again' : 'Hold one person clearly inside the camera view.');
+
+  const liveDetail = guide.kind === 'food'
+    ? 'Food live detection is the next matcher.'
+    : liveFeedback?.detail ?? liveError ?? 'Sampled matching updates about every 1–2 seconds.';
+
   return (
     <SafeAreaView style={styles.cameraSafe}>
       {analyzer}
+      {liveAnalyzer}
       <StatusBar style="light" />
       <View style={styles.cameraWrap}>
-        <CameraView ref={cameraRef} style={StyleSheet.absoluteFillObject} facing="back" />
+        <CameraView
+          ref={cameraRef}
+          style={StyleSheet.absoluteFillObject}
+          facing="back"
+          onCameraReady={() => setCameraReady(true)}
+        />
         <GuideOverlay guide={guide} width={width} height={height} opacity={0.99} />
 
-        <View style={styles.liveBadge}>
-          <Text style={styles.liveBadgeText}>
-            {guide.kind === 'food' ? 'MATCH OBJECT ZONES' : 'PUT SUBJECT INSIDE OUTLINE'}
-          </Text>
-        </View>
+        <Pressable
+          style={[styles.liveBadge, liveFeedback?.status === 'matched' && styles.liveBadgeMatched]}
+          onPress={() => guide.kind === 'portrait' && setLiveEnabled((value) => !value)}
+        >
+          <Text style={styles.liveBadgeText}>{matchLabel}</Text>
+          {guide.kind === 'portrait' && <Text style={styles.liveBadgeSub}>LIVE COACH · SAMPLED</Text>}
+        </Pressable>
+
+        {liveFeedback && guide.kind === 'portrait' && (
+          <View style={styles.scoreStrip}>
+            <Text style={styles.scoreItem}>POS {liveFeedback.framingScore}</Text>
+            <Text style={styles.scoreItem}>SIZE {liveFeedback.scaleScore}</Text>
+            {liveFeedback.poseScore != null && <Text style={styles.scoreItem}>POSE {liveFeedback.poseScore}</Text>}
+            {liveFeedback.faceScore != null && <Text style={styles.scoreItem}>FACE {liveFeedback.faceScore}</Text>}
+          </View>
+        )}
 
         <View style={styles.liveHint}>
-          <Text style={styles.liveHintText}>
-            {guide.kind === 'food'
-              ? 'Match size + spacing. Ignore styling details.'
-              : 'Match the outside line first. The source background does not matter.'}
-          </Text>
+          <Text style={styles.liveHintTitle}>{liveHint}</Text>
+          <Text style={styles.liveHintText}>{liveDetail}</Text>
         </View>
 
         {capturedUri && (
@@ -350,9 +485,16 @@ export default function App() {
         )}
 
         <View style={styles.cameraBottom}>
-          <Pressable style={styles.cameraSideButton} onPress={() => setScreen('reference')}><Text style={styles.cameraSideText}>Guide</Text></Pressable>
-          <Pressable style={styles.shutterOuter} onPress={takePhoto}><View style={styles.shutterInner} /></Pressable>
-          <Pressable style={styles.cameraSideButton} onPress={resetTransform}><Text style={styles.cameraSideText}>Reset</Text></Pressable>
+          <Pressable style={styles.cameraSideButton} onPress={leaveCamera}><Text style={styles.cameraSideText}>Guide</Text></Pressable>
+          <Pressable style={[styles.shutterOuter, liveFeedback?.status === 'matched' && styles.shutterMatched]} onPress={takePhoto}>
+            <View style={styles.shutterInner} />
+          </Pressable>
+          <Pressable
+            style={styles.cameraSideButton}
+            onPress={() => guide.kind === 'portrait' ? setLiveEnabled((value) => !value) : resetTransform()}
+          >
+            <Text style={styles.cameraSideText}>{guide.kind === 'portrait' ? (liveEnabled ? 'AI On' : 'AI Off') : 'Reset'}</Text>
+          </Pressable>
         </View>
       </View>
     </SafeAreaView>
@@ -420,10 +562,15 @@ const styles = StyleSheet.create({
   secondaryText: { color: '#FFF', fontWeight: '800' },
   primarySmall: { flex: 1.35, paddingVertical: 15, borderRadius: 16, alignItems: 'center', backgroundColor: '#F8FF61' },
   cameraWrap: { flex: 1, overflow: 'hidden' },
-  liveBadge: { position: 'absolute', top: 20, alignSelf: 'center', backgroundColor: 'rgba(0,0,0,0.66)', paddingHorizontal: 13, paddingVertical: 8, borderRadius: 999 },
-  liveBadgeText: { color: '#F8FF61', fontSize: 10, fontWeight: '900', letterSpacing: 0.8 },
-  liveHint: { position: 'absolute', left: 18, right: 18, bottom: 130, alignItems: 'center' },
-  liveHintText: { color: '#FFF', fontSize: 12, fontWeight: '700', textAlign: 'center', backgroundColor: 'rgba(0,0,0,0.56)', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 14, overflow: 'hidden' },
+  liveBadge: { position: 'absolute', top: 20, alignSelf: 'center', backgroundColor: 'rgba(0,0,0,0.72)', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 16, alignItems: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.20)' },
+  liveBadgeMatched: { backgroundColor: 'rgba(29,75,45,0.88)', borderColor: '#85F3A7' },
+  liveBadgeText: { color: '#F8FF61', fontSize: 12, fontWeight: '900', letterSpacing: 0.7 },
+  liveBadgeSub: { color: '#A9ADB6', fontSize: 8, fontWeight: '800', letterSpacing: 0.9, marginTop: 2 },
+  scoreStrip: { position: 'absolute', top: 82, alignSelf: 'center', flexDirection: 'row', gap: 6, backgroundColor: 'rgba(0,0,0,0.58)', paddingHorizontal: 9, paddingVertical: 6, borderRadius: 12 },
+  scoreItem: { color: '#FFF', fontSize: 9, fontWeight: '900' },
+  liveHint: { position: 'absolute', left: 18, right: 18, bottom: 132, alignItems: 'center' },
+  liveHintTitle: { color: '#111315', fontSize: 22, fontWeight: '900', textAlign: 'center', backgroundColor: '#F8FF61', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 14, overflow: 'hidden' },
+  liveHintText: { color: '#FFF', fontSize: 11, fontWeight: '700', textAlign: 'center', backgroundColor: 'rgba(0,0,0,0.64)', paddingHorizontal: 12, paddingVertical: 7, borderRadius: 12, overflow: 'hidden', marginTop: 6 },
   capturedPreview: { position: 'absolute', right: 16, top: 68, width: 72, alignItems: 'center' },
   capturedImage: { width: 66, height: 88, borderRadius: 12, borderWidth: 2, borderColor: '#F8FF61' },
   capturedText: { color: '#FFF', fontSize: 9, fontWeight: '800', marginTop: 5 },
@@ -431,5 +578,6 @@ const styles = StyleSheet.create({
   cameraSideButton: { width: 72, paddingVertical: 12, borderRadius: 16, backgroundColor: 'rgba(0,0,0,0.62)', alignItems: 'center' },
   cameraSideText: { color: '#FFF', fontWeight: '800' },
   shutterOuter: { width: 78, height: 78, borderRadius: 39, borderWidth: 4, borderColor: '#FFF', alignItems: 'center', justifyContent: 'center' },
+  shutterMatched: { borderColor: '#85F3A7', borderWidth: 6 },
   shutterInner: { width: 62, height: 62, borderRadius: 31, backgroundColor: '#F8FF61' },
 });
