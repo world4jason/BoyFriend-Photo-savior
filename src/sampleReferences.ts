@@ -12,10 +12,11 @@ export type SampleReference = {
 
 const portrait = (people: GuideSpec['people'], crop: GuideSpec['crop'], lookSpace: GuideSpec['lookSpace']): GuideSpec => ({
   kind: 'portrait',
-  mode: 'simple',
+  mode: 'outline',
   people,
   crop,
   lookSpace,
+  aspectRatio: 0.75,
   transform: { dx: 0, dy: 0, scale: 1 },
 });
 
@@ -23,7 +24,7 @@ export const SAMPLE_REFERENCES: SampleReference[] = [
   {
     id: 'cafe-lean',
     title: 'Cafe lean',
-    tag: 'HALF BODY · HANDS + HEAD',
+    tag: 'HALF BODY · OUTER SHAPE',
     credit: 'Photo: amin naderloei / Unsplash',
     sourceUrl: 'https://unsplash.com/photos/vxefqB0OwTA',
     imageUrl: 'https://images.unsplash.com/photo-1760551938407-f66c40173749?auto=format&fit=crop&w=900&h=1200&q=82',
@@ -43,7 +44,7 @@ export const SAMPLE_REFERENCES: SampleReference[] = [
   {
     id: 'street-turn',
     title: 'Look back',
-    tag: 'FULL BODY · FACE DIRECTION',
+    tag: 'FULL BODY · OUTER SHAPE',
     credit: 'Photo: Rodolfo Sanches Carvalho / Unsplash',
     sourceUrl: 'https://unsplash.com/photos/yq_M_VLGAKk',
     imageUrl: 'https://images.unsplash.com/photo-1510112779932-4e1b71001c26?auto=format&fit=crop&w=900&h=1200&q=82',
@@ -65,7 +66,7 @@ export const SAMPLE_REFERENCES: SampleReference[] = [
   {
     id: 'low-squat',
     title: 'Low squat',
-    tag: 'FULL BODY · LOW ANGLE',
+    tag: 'FULL BODY · OUTER SHAPE',
     credit: 'Photo: Victor Dueñas Teixeira / Unsplash',
     sourceUrl: 'https://unsplash.com/photos/6ExulFuSnJI',
     imageUrl: 'https://images.unsplash.com/photo-1509946458702-4378df1e2560?auto=format&fit=crop&w=900&h=1200&q=82',
@@ -87,7 +88,7 @@ export const SAMPLE_REFERENCES: SampleReference[] = [
   {
     id: 'duo-cafe',
     title: 'Duo sit',
-    tag: 'TWO PEOPLE · RELATIONSHIP',
+    tag: 'TWO PEOPLE · OUTER RELATION',
     credit: 'Photo: Aleksandar Andreev / Unsplash',
     sourceUrl: 'https://unsplash.com/photos/AVUFRV2NZCc',
     imageUrl: 'https://images.unsplash.com/photo-1679136341086-2a9a6bc414aa?auto=format&fit=crop&w=900&h=1200&q=82',
@@ -124,6 +125,7 @@ export const SAMPLE_REFERENCES: SampleReference[] = [
       ],
       crop: 'tabletop',
       lookSpace: 'center',
+      aspectRatio: 0.75,
       transform: { dx: 0, dy: 0, scale: 1 },
     },
   },
