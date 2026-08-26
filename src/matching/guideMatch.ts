@@ -199,6 +199,17 @@ function humanizeJoint(name?: string) {
 }
 
 export function scorePortraitMatch(targetGuide: GuideSpec, liveGuide: GuideSpec): MatchFeedback {
+  if (targetGuide.people.length !== 1) {
+    return {
+      score: 0,
+      framingScore: 0,
+      scaleScore: 0,
+      status: 'searching',
+      hint: 'Manual guide only',
+      detail: 'Live Coach currently supports one-person targets. Use the overlay manually for duo or group shots.',
+    };
+  }
+
   const target = targetGuide.people[0];
   const live = liveGuide.people[0];
   if (!target || !live) {
