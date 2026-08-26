@@ -1,13 +1,14 @@
 'use dom';
 
 import { useEffect } from 'react';
-import { FilesetResolver, ImageSegmenter, PoseLandmarker } from '@mediapipe/tasks-vision';
+import { FaceLandmarker, FilesetResolver, ImageSegmenter, PoseLandmarker } from '@mediapipe/tasks-vision';
 import type { PoseLandmark } from '../pose/PoseDetector';
-import type { NormalizedPoint } from '../types';
+import type { NormalizedPoint, PersonGuide } from '../types';
 import type { PersonContourDetection } from './guideFromContour';
 
 const SEGMENTER_MODEL_URL = 'https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmenter/float16/latest/selfie_segmenter.tflite';
 const POSE_MODEL_URL = 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task';
+const FACE_MODEL_URL = 'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task';
 const WASM_URL = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.1/wasm';
 
 const POSE_NAMES = [
@@ -50,6 +51,12 @@ type Props = {
 type Analyzer = {
   segmenter: ImageSegmenter;
   poseLandmarker: PoseLandmarker | null;
+  faceLandmarker: FaceLandmarker | null;
+};
+
+type FaceDirectionResult = {
+  direction: PersonGuide['head']['facing'];
+  yawDegrees: number;
 };
 
 let analyzerPromise: Promise<Analyzer> | null = null;
@@ -76,6 +83,42 @@ function poseResultToLandmarks(result: any): PoseLandmark[] {
         ? Number(point.presence)
         : undefined,
   }));
+}
+
+/**
+ * MediaPipe face mesh landmarks 234 and 454 sit near the two lateral face
+ * boundaries, while landmark 1 sits around the nose tip. The normalized nose
+ * offset is a useful shooting hint for whether the face points toward frame
+ * left/right. It is intentionally treated as an approximate guide, not a
+ * calibrated biometric/head-pose measurement.
+ */
+function faceDirectionFromResult(result: any): FaceDirectionResult | null {
+  const face = result?.faceLandmarks?.[0];
+  if (!Array.isArray(face) || face.length <= 454) return null;
+
+  const nose = face[1];
+  const sideA = face[234];
+  const sideB = face[454];
+  if (!nose || !sideA || !sideB) return null;
+
+  const leftX = Math.min(Number(sideA.x), Number(sideB.x));
+  const rightX = Math.max(Number(sideA.x), Number(sideB.x));
+  const faceWidth = rightX - leftX;
+  if (!Number.isFinite(faceWidth) || faceWidth < 0.025) return null;
+
+  const centerX = (leftX + rightX) / 2;
+  const offset = (Number(nose.x) - centerX) / faceWidth;
+  if (!Number.isFinite(offset)) return null;
+
+  // An intentionally conservative pseudo-yaw used only for UI guidance.
+  const yawDegrees = Math.max(-45, Math.min(45, offset * 95));
+  const direction: PersonGuide['head']['facing'] = offset < -0.075
+    ? 'left'
+    : offset > 0.075
+      ? 'right'
+      : 'front';
+
+  return { direction, yawDegrees };
 }
 
 const simplifySide = (points: NormalizedPoint[]) => {
@@ -155,7 +198,23 @@ async function getAnalyzer(): Promise<Analyzer> {
         // Pose is an enhancement. The segmentation contour remains usable without it.
       }
 
-      return { segmenter, poseLandmarker };
+      let faceLandmarker: FaceLandmarker | null = null;
+      try {
+        faceLandmarker = await createWithDelegate((delegate) => FaceLandmarker.createFromOptions(vision, {
+          baseOptions: { modelAssetPath: FACE_MODEL_URL, delegate },
+          runningMode: 'IMAGE',
+          numFaces: 1,
+          minFaceDetectionConfidence: 0.35,
+          minFacePresenceConfidence: 0.30,
+          minTrackingConfidence: 0.25,
+          outputFaceBlendshapes: false,
+          outputFacialTransformationMatrixes: false,
+        }));
+      } catch {
+        // Face direction falls back to coarse pose landmarks.
+      }
+
+      return { segmenter, poseLandmarker, faceLandmarker };
     })();
   }
   return analyzerPromise;
@@ -175,7 +234,7 @@ async function loadImage(dataUrl: string): Promise<any> {
 }
 
 async function analyze(dataUrl: string): Promise<PersonContourDetection> {
-  const { segmenter, poseLandmarker } = await getAnalyzer();
+  const { segmenter, poseLandmarker, faceLandmarker } = await getAnalyzer();
   const image = await loadImage(dataUrl);
 
   let poseLandmarks: PoseLandmark[] = [];
@@ -184,6 +243,15 @@ async function analyze(dataUrl: string): Promise<PersonContourDetection> {
       poseLandmarks = poseResultToLandmarks(poseLandmarker.detect(image));
     } catch {
       poseLandmarks = [];
+    }
+  }
+
+  let faceDirection: FaceDirectionResult | null = null;
+  if (faceLandmarker) {
+    try {
+      faceDirection = faceDirectionFromResult(faceLandmarker.detect(image));
+    } catch {
+      faceDirection = null;
     }
   }
 
@@ -196,7 +264,12 @@ async function analyze(dataUrl: string): Promise<PersonContourDetection> {
           const data = categoryMask.getAsUint8Array();
           const detection = maskToOuterContour(data, categoryMask.width, categoryMask.height);
           categoryMask.close?.();
-          resolve({ ...detection, poseLandmarks });
+          resolve({
+            ...detection,
+            poseLandmarks,
+            faceDirection: faceDirection?.direction,
+            faceYawDegrees: faceDirection?.yawDegrees,
+          });
         } catch (error) {
           reject(error);
         }
