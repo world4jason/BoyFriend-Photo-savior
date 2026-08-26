@@ -1,4 +1,4 @@
-import { GuideSpec } from './types';
+import { GuideSpec, GuideVisualStyle } from './types';
 
 export type SampleReference = {
   id: string;
@@ -13,6 +13,7 @@ export type SampleReference = {
 const portrait = (people: GuideSpec['people'], crop: GuideSpec['crop'], lookSpace: GuideSpec['lookSpace']): GuideSpec => ({
   kind: 'portrait',
   mode: 'outline',
+  visualStyle: 'sovs',
   people,
   crop,
   lookSpace,
@@ -20,7 +21,7 @@ const portrait = (people: GuideSpec['people'], crop: GuideSpec['crop'], lookSpac
   transform: { dx: 0, dy: 0, scale: 1 },
 });
 
-export const SAMPLE_REFERENCES: SampleReference[] = [
+const BASE_REFERENCES: SampleReference[] = [
   {
     id: 'cafe-lean',
     title: 'Cafe lean',
@@ -117,6 +118,7 @@ export const SAMPLE_REFERENCES: SampleReference[] = [
     guide: {
       kind: 'food',
       mode: 'simple',
+      visualStyle: 'recompose',
       people: [],
       objects: [
         { center: { x: 0.34, y: 0.61 }, rx: 0.24, ry: 0.18, label: 'CAKE', rotation: -10 },
@@ -129,4 +131,28 @@ export const SAMPLE_REFERENCES: SampleReference[] = [
       transform: { dx: 0, dy: 0, scale: 1 },
     },
   },
+];
+
+const STYLE_NAMES: { key: GuideVisualStyle; title: string; tag: string }[] = [
+  { key: 'poseoverlay', title: 'PoseOverlay-like', tag: 'BENCHMARK · PRECISE CONTOUR' },
+  { key: 'poseghost', title: 'Poseghost-like', tag: 'BENCHMARK · GHOST SILHOUETTE' },
+  { key: 'sovs', title: 'SOVS-like', tag: 'BENCHMARK · STEP-IN OUTLINE' },
+  { key: 'recompose', title: 'reCompose-like', tag: 'BENCHMARK · COMPOSITION GUIDE' },
+];
+
+const benchmarkBase = BASE_REFERENCES[0];
+const STYLE_BENCHMARKS: SampleReference[] = STYLE_NAMES.map(({ key, title, tag }) => ({
+  ...benchmarkBase,
+  id: `style-${key}`,
+  title,
+  tag,
+  guide: {
+    ...benchmarkBase.guide,
+    visualStyle: key,
+  },
+}));
+
+export const SAMPLE_REFERENCES: SampleReference[] = [
+  ...STYLE_BENCHMARKS,
+  ...BASE_REFERENCES,
 ];
