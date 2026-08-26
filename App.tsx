@@ -27,8 +27,8 @@ type Screen = 'home' | 'reference' | 'camera';
 type AnalysisStatus = 'idle' | 'analyzing' | 'ready' | 'error' | 'preset';
 
 const FOOD_MODES: { key: GuideMode; label: string }[] = [
-  { key: 'simple', label: 'Zones' },
-  { key: 'outline', label: 'Outline' },
+  { key: 'simple', label: 'Soft zones' },
+  { key: 'outline', label: 'Rings' },
 ];
 
 const cloneGuide = (guide: GuideSpec): GuideSpec => JSON.parse(JSON.stringify(guide)) as GuideSpec;
