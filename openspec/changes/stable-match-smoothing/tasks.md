@@ -1,14 +1,17 @@
 # Tasks
 
 - [x] Define temporal stability behavior in OpenSpec delta.
-- [ ] Add pure `MatchStabilityState` state machine.
-- [ ] Smooth headline score with EMA.
-- [ ] Require 3 consecutive raw matches to enter stable match.
-- [ ] Require 2 consecutive misses to exit stable match.
-- [ ] Reset stability at camera/Live Coach lifecycle boundaries.
-- [ ] Preserve stability across display-mode-only changes.
-- [ ] Update camera UI to distinguish raw hold progress from stable match.
-- [ ] Update current `live-coach` spec after implementation review.
+- [x] Add pure `MatchStabilityState` state machine.
+- [x] Smooth headline score with EMA.
+- [x] Require 2 consecutive raw matches to enter stable match.
+- [x] Require 2 consecutive minor misses to exit stable match.
+- [x] Clear stable state immediately on severe aggregate/framing/scale miss.
+- [x] Add stable-entry transition helper for future Auto Capture.
+- [x] Reset stability at camera/Live Coach lifecycle boundaries.
+- [x] Preserve stability across display-mode-only changes.
+- [x] Update camera UI to distinguish raw hold progress from stable match.
+- [x] Update current `live-coach` spec after implementation review.
+- [ ] Clear stale `liveFeedback` on camera-sample capture failure paths.
 - [ ] Run `npm run spec:validate` when a runnable environment is available.
 - [ ] Run `npm run typecheck` when a runnable environment is available.
 - [ ] Run `npm run export:web` when a runnable environment is available.
