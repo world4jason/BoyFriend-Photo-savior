@@ -1,6 +1,7 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
+  FlatList,
   Image,
   Pressable,
   SafeAreaView,
@@ -31,10 +32,25 @@ const FOOD_MODES: { key: GuideMode; label: string }[] = [
   { key: 'outline', label: 'Rings' },
 ];
 
+const LARGE_TEMPLATE_CATALOG_THRESHOLD = 24;
+const TEMPLATE_CARD_WIDTH = 174;
+const TEMPLATE_CARD_GAP = 12;
+const TEMPLATE_CARD_EXTENT = TEMPLATE_CARD_WIDTH + TEMPLATE_CARD_GAP;
+
 const cloneGuide = (guide: GuideSpec): GuideSpec => JSON.parse(JSON.stringify(guide)) as GuideSpec;
 const cleanupRequestFiles = (request?: OutlineAnalysisRequest | null) => {
   request?.cleanupUris?.forEach(cleanupTemporaryUri);
 };
+
+const templateCategoryLabel = (category: string) => {
+  const parts = category.split('/').map((part) => part.trim()).filter(Boolean);
+  if (parts.length > 1) return parts.slice(1).join(' / ');
+  return parts[0] ?? 'Other';
+};
+
+const uniqueTemplateCategories = (templates: BenchmarkTemplate[]) => Array.from(new Set(
+  templates.map((template) => templateCategoryLabel(template.category)),
+));
 
 export default function App() {
   const { width, height } = useWindowDimensions();
@@ -43,6 +59,7 @@ export default function App() {
   const [activeSample, setActiveSample] = useState<SampleReference | null>(null);
   const [activeTemplateTitle, setActiveTemplateTitle] = useState<string | null>(null);
   const [templateMode, setTemplateMode] = useState<GuidePreset>('sovs');
+  const [templateCategory, setTemplateCategory] = useState('All');
   const [guide, setGuide] = useState<GuideSpec>(cloneGuide(DEFAULT_GUIDE));
   const [permission, requestPermission] = useCameraPermissions();
   const [capturedUri, setCapturedUri] = useState<string | null>(null);
@@ -66,7 +83,30 @@ export default function App() {
   const previewHeight = Math.min(height * 0.60, 680);
   const activePreset = getGuidePreset(guide.visualStyle ?? 'sovs');
   const availablePresets = GUIDE_PRESETS.filter((preset) => preset.supportedKinds.includes(guide.kind));
-  const filteredTemplates = BENCHMARK_TEMPLATES.filter((template) => template.defaultPreset === templateMode);
+
+  const modeTemplates = useMemo(
+    () => BENCHMARK_TEMPLATES.filter((template) => template.defaultPreset === templateMode),
+    [templateMode],
+  );
+  const templateCategories = useMemo(() => uniqueTemplateCategories(modeTemplates), [modeTemplates]);
+  const isLargeTemplateCatalog = modeTemplates.length > LARGE_TEMPLATE_CATALOG_THRESHOLD;
+  const templateCategoryOptions = useMemo(
+    () => isLargeTemplateCatalog ? templateCategories : ['All', ...templateCategories],
+    [isLargeTemplateCatalog, templateCategories],
+  );
+  const filteredTemplates = useMemo(
+    () => templateCategory === 'All'
+      ? modeTemplates
+      : modeTemplates.filter((template) => templateCategoryLabel(template.category) === templateCategory),
+    [modeTemplates, templateCategory],
+  );
+
+  useEffect(() => {
+    const nextCategory = modeTemplates.length > LARGE_TEMPLATE_CATALOG_THRESHOLD
+      ? (templateCategories[0] ?? 'All')
+      : 'All';
+    setTemplateCategory(nextCategory);
+  }, [templateMode, modeTemplates.length, templateCategories]);
 
   const setGuidePreset = (preset: GuidePreset) => {
     selectedPresetRef.current = preset;
@@ -414,7 +454,7 @@ export default function App() {
 
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Template library</Text>
-            <Text style={styles.sectionCaption}>Public benchmark patterns recreated as our own normalized vector geometry.</Text>
+            <Text style={styles.sectionCaption}>Choose a display mode, then a shot category. Large catalogs open to a focused subset.</Text>
           </View>
           <View style={styles.templateFilterRow}>
             {GUIDE_PRESETS.map((preset) => {
@@ -432,18 +472,51 @@ export default function App() {
               );
             })}
           </View>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.templateRow}>
-            {filteredTemplates.map((template) => (
-              <Pressable key={template.id} style={styles.templateCard} onPress={() => useBenchmarkTemplate(template)}>
-                <View style={styles.templatePreview}>
-                  <GuideOverlay guide={template.guide} width={150} height={200} opacity={0.96} />
-                </View>
-                <Text style={styles.templateSource}>{getGuidePreset(template.defaultPreset).shortLabel} · {template.inspiredBy}</Text>
-                <Text style={styles.templateTitle}>{template.title}</Text>
-                <Text style={styles.templateCategory}>{template.category}</Text>
-              </Pressable>
-            ))}
+
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoryFilterRow}>
+            {templateCategoryOptions.map((category) => {
+              const active = templateCategory === category;
+              const count = category === 'All'
+                ? modeTemplates.length
+                : modeTemplates.filter((template) => templateCategoryLabel(template.category) === category).length;
+              return (
+                <Pressable
+                  key={category}
+                  onPress={() => setTemplateCategory(category)}
+                  style={[styles.categoryFilter, active && styles.categoryFilterActive]}
+                >
+                  <Text style={[styles.categoryFilterText, active && styles.categoryFilterTextActive]}>{category}</Text>
+                  <Text style={[styles.categoryFilterCount, active && styles.categoryFilterCountActive]}>{count}</Text>
+                </Pressable>
+              );
+            })}
           </ScrollView>
+
+          <View style={styles.templateListWrap}>
+            <FlatList
+              horizontal
+              data={filteredTemplates}
+              keyExtractor={(template) => template.id}
+              showsHorizontalScrollIndicator={false}
+              initialNumToRender={5}
+              maxToRenderPerBatch={6}
+              windowSize={5}
+              getItemLayout={(_, index) => ({ length: TEMPLATE_CARD_EXTENT, offset: TEMPLATE_CARD_EXTENT * index, index })}
+              ItemSeparatorComponent={() => <View style={styles.templateSeparator} />}
+              contentContainerStyle={styles.templateRow}
+              renderItem={({ item: template }) => (
+                <Pressable style={styles.templateCard} onPress={() => useBenchmarkTemplate(template)}>
+                  <View style={styles.templatePreview}>
+                    <GuideOverlay guide={template.guide} width={150} height={200} opacity={0.96} />
+                  </View>
+                  <Text style={styles.templateSource}>{getGuidePreset(template.defaultPreset).shortLabel} · {template.inspiredBy}</Text>
+                  <Text style={styles.templateTitle}>{template.title}</Text>
+                  <Text style={styles.templateCategory}>{templateCategoryLabel(template.category)}</Text>
+                </Pressable>
+              )}
+              ListEmptyComponent={<Text style={styles.templateEmpty}>No templates in this category yet.</Text>}
+            />
+          </View>
 
           <View style={styles.howCard}>
             <View style={styles.howStep}><Text style={styles.howNumber}>1</Text><Text style={styles.howText}>Import a photo or choose a template.</Text></View>
@@ -600,19 +673,29 @@ const styles = StyleSheet.create({
   sampleTag: { color: '#F8FF61', fontSize: 9, fontWeight: '900', letterSpacing: 0.8 },
   sampleTitle: { color: '#FFF', fontSize: 21, fontWeight: '900', marginTop: 4 },
   sampleCredit: { color: '#C3C6CC', fontSize: 9, marginTop: 5 },
-  templateFilterRow: { width: '100%', maxWidth: 920, flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 },
+  templateFilterRow: { width: '100%', maxWidth: 920, flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 10 },
   templateFilter: { minWidth: 92, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8, paddingHorizontal: 13, paddingVertical: 10, borderRadius: 14, backgroundColor: '#17191E', borderWidth: 1, borderColor: '#2B2F36' },
   templateFilterActive: { backgroundColor: '#F8FF61', borderColor: '#F8FF61' },
   templateFilterText: { color: '#FFF', fontSize: 12, fontWeight: '900' },
   templateFilterTextActive: { color: '#111315' },
   templateFilterCount: { color: '#747983', fontSize: 10, fontWeight: '900' },
   templateFilterCountActive: { color: '#4D5117' },
-  templateRow: { gap: 12, paddingHorizontal: 2, paddingBottom: 4 },
-  templateCard: { width: 174, minHeight: 286, borderRadius: 20, padding: 11, backgroundColor: '#14161A', borderWidth: 1, borderColor: '#292D34' },
+  categoryFilterRow: { gap: 7, paddingHorizontal: 2, paddingBottom: 12 },
+  categoryFilter: { flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 11, paddingVertical: 8, borderRadius: 999, backgroundColor: '#121419', borderWidth: 1, borderColor: '#272B32' },
+  categoryFilterActive: { backgroundColor: '#2B2E19', borderColor: '#F8FF61' },
+  categoryFilterText: { color: '#A7ABB4', fontSize: 10, fontWeight: '800' },
+  categoryFilterTextActive: { color: '#FFF' },
+  categoryFilterCount: { color: '#666B74', fontSize: 9, fontWeight: '900' },
+  categoryFilterCountActive: { color: '#F8FF61' },
+  templateListWrap: { width: '100%', maxWidth: 920, minHeight: 286 },
+  templateRow: { paddingHorizontal: 2, paddingBottom: 4 },
+  templateSeparator: { width: TEMPLATE_CARD_GAP },
+  templateCard: { width: TEMPLATE_CARD_WIDTH, minHeight: 286, borderRadius: 20, padding: 11, backgroundColor: '#14161A', borderWidth: 1, borderColor: '#292D34' },
   templatePreview: { width: 150, height: 200, borderRadius: 14, overflow: 'hidden', alignSelf: 'center', backgroundColor: '#08090A' },
   templateSource: { color: '#F8FF61', fontSize: 8, fontWeight: '900', letterSpacing: 0.7, marginTop: 10 },
   templateTitle: { color: '#FFF', fontSize: 15, fontWeight: '900', marginTop: 3 },
   templateCategory: { color: '#7D828C', fontSize: 9, marginTop: 3 },
+  templateEmpty: { color: '#777C86', fontSize: 12, paddingVertical: 28, paddingHorizontal: 6 },
   howCard: { width: '100%', maxWidth: 650, marginTop: 30, padding: 18, borderRadius: 20, backgroundColor: '#15171B', borderWidth: 1, borderColor: '#24272E', gap: 14 },
   howStep: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   howNumber: { width: 28, height: 28, textAlign: 'center', lineHeight: 28, borderRadius: 14, overflow: 'hidden', backgroundColor: '#F8FF61', color: '#111315', fontWeight: '900' },
