@@ -30,6 +30,7 @@ It can contain:
 ```text
 GuideSpec
 ├─ kind: portrait | food | scene
+├─ displayMode: outline | skeleton | ghost | guide
 ├─ people[]
 │  ├─ contour
 │  ├─ head + face direction
@@ -46,6 +47,8 @@ GuideSpec
 ```
 
 No display mode owns a separate copy of target truth.
+
+Older template/sample data may still carry a deprecated benchmark-shaped `visualStyle` key (`sovs`, `poseoverlay`, `poseghost`, `recompose`). `DisplayMode` is now the canonical product type; compatibility mapping is explicit in `src/guidePresets.ts` and legacy keys should be removed incrementally as those data files are touched.
 
 ## 3. Runtime layers
 
@@ -104,7 +107,8 @@ Important invariants:
 - Stale reference preparation must not replace a newer selection.
 - Camera entry is blocked while the current reference is actively mutating.
 - Pose and face are optional enhancements; segmentation/fallback can still produce a usable guide.
-- A transient MediaPipe initialization failure must not permanently poison all later attempts.
+- A transient MediaPipe initialization failure resets the singleton promise so a later request can retry.
+- MediaPipe category-mask resources close in a `finally` path even if contour conversion fails.
 
 ## 5. Live Coach lifecycle
 
@@ -149,7 +153,7 @@ Current families:
 - Ghost: 62-slot PoseGhost family-based POC reconstruction.
 - Guide: portrait, food, travel, street, selfie, pets, family, landscape, buildings, basic composition patterns.
 
-Large catalogs should default to a category subset instead of eagerly rendering every SVG preview.
+The current browser filters by Display Mode. Category-first browsing/virtualization remains a follow-up for the larger Ghost and Guide catalogs.
 
 ## 7. Display-mode renderers
 
@@ -174,21 +178,27 @@ Web, iOS, and Android are first-class targets.
 - Native file cleanup is isolated behind `.native.ts`; Web uses a no-op fallback.
 - Current MediaPipe WASM/models are fetched from public URLs on first load. User image bytes remain local.
 
-## 9. Current technical debt
+## 9. Architecture audit status
 
-### P1 / fix before calling the architecture stable
+### P0/P1
 
-1. **Benchmark IDs in domain mode state** — legacy values (`sovs`, `poseoverlay`, `poseghost`, `recompose`) still appear in core `GuideSpec.visualStyle`. Product-domain state should converge on `outline | skeleton | ghost | guide`; benchmark IDs should remain compatibility/provenance metadata only.
-2. **Analyzer retry** — a rejected singleton MediaPipe initialization promise currently remains rejected for the lifetime of the page unless reset.
-3. **Segmentation mask cleanup** — category-mask resources should close even when contour conversion throws.
+No unresolved P0/P1 findings remain in the reviewed architecture branch.
+
+Resolved during this audit:
+
+1. Introduced canonical `DisplayMode = outline | skeleton | ghost | guide` and explicit compatibility mapping for legacy benchmark-shaped keys.
+2. MediaPipe initialization can retry after a transient rejected singleton initialization.
+3. Segmentation category-mask resources close even when contour conversion throws.
+4. Expo app version and package version are synchronized.
+5. Legacy outline-only pose-adapter documentation was corrected.
 
 ### P2 / next structural cleanup
 
-1. `App.tsx` is a monolith combining navigation state, reference preparation, live sampling, template browsing, and all screen markup.
-2. Ghost (62) and Guide (~40) template catalogs need category-first browsing/virtualization rather than eager large SVG lists.
-3. Package version and Expo app version should stay synchronized.
-4. `src/pose/PoseDetector.ts` contains legacy comments from the earlier outline-only product model.
-5. Physical-device camera smoke testing is still missing because hosted Actions are blocked and the current execution environment has no external DNS.
+1. `App.tsx` is still a monolith combining navigation state, reference preparation, live sampling, template browsing, and all screen markup.
+2. Ghost (62) and Guide (~40) template catalogs need category-first browsing/virtualization rather than eager large SVG lists after a mode is selected.
+3. Existing template/sample records should migrate from deprecated benchmark-shaped `visualStyle` values to canonical `displayMode` as those files are touched.
+4. Physical-device camera smoke testing is still missing because hosted Actions are blocked and the current execution environment has no external DNS.
+5. There is no automated unit-test layer for pure match/template invariants yet; current validation is typecheck/web export when available plus deliberate review.
 
 ## 10. Recommended module direction
 
