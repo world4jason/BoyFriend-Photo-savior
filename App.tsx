@@ -227,6 +227,13 @@ export default function App() {
 
   const takePhoto = async () => {
     if (!cameraRef.current) return;
+
+    // A real shutter press wins over the low-priority sampled analyzer. Cancel
+    // its request before capture so its cache lifetime and feedback cannot
+    // overlap the user's actual photo.
+    cleanupRequestFiles(liveRequest);
+    setLiveRequest(null);
+
     try {
       liveBusyRef.current = true;
       const photo = await cameraRef.current.takePictureAsync({ quality: 0.92 });
