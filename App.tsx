@@ -20,7 +20,7 @@ import { MatchFeedback, scorePortraitMatch } from './src/matching/guideMatch';
 import { SAMPLE_REFERENCES, SampleReference } from './src/sampleReferences';
 import { OutlineAnalysisRequest, PersonOutlineAnalyzer } from './src/segmentation/PersonOutlineAnalyzer';
 import { buildGuideFromContour, PersonContourDetection } from './src/segmentation/guideFromContour';
-import { BENCHMARK_TEMPLATES, BenchmarkTemplate } from './src/templates/benchmarkTemplates';
+import { BENCHMARK_TEMPLATES, BenchmarkTemplate } from './src/templates';
 import { DEFAULT_GUIDE, GuideMode, GuidePreset, GuideSpec } from './src/types';
 
 type Screen = 'home' | 'reference' | 'camera';
