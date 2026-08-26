@@ -12,7 +12,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@mediapipe/tasks-vision": "^1.0.1",
+    "@mediapipe/tasks-vision": "1.0.1",
     "expo": "~57.0.14",
     "expo-camera": "~57.0.4",
     "expo-file-system": "~57.0.5",
