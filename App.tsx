@@ -297,6 +297,7 @@ export default function App() {
     if (liveEnabled) {
       cleanupRequestFiles(liveRequest);
       setLiveRequest(null);
+      setAutoCaptureEnabled(false);
       setLiveError('');
       liveBusyRef.current = false;
       setLiveEnabled(false);
@@ -306,10 +307,27 @@ export default function App() {
     setLiveEnabled(true);
   };
 
+  const toggleAutoCapture = () => {
+    if (!liveEnabled) return;
+    const nextEnabled = !autoCaptureEnabled;
+    setAutoCaptureEnabled(nextEnabled);
+    setLiveError('');
+    if (nextEnabled) {
+      // Auto Capture must earn fresh stability after explicit opt-in; do not
+      // consume a Stable state accumulated while Auto Capture was still off.
+      resetLiveStability();
+    }
+  };
+
   const takePhoto = async () => {
-    if (!cameraRef.current || photoCaptureRef.current) return;
+    if (!cameraRef.current) return;
+    if (photoCaptureRef.current) {
+      setLiveError('Camera is finishing another capture. Try the shutter again.');
+      return;
+    }
     cleanupRequestFiles(liveRequest);
     setLiveRequest(null);
+    setLiveError('');
     photoCaptureRef.current = true;
     try {
       liveBusyRef.current = true;
@@ -333,6 +351,7 @@ export default function App() {
       const previousStability = matchStabilityRef.current;
       const nextStability = advanceMatchStability(previousStability, feedback);
       const shouldAutoCapture = guide.kind === 'portrait'
+        && liveEnabled
         && autoCaptureEnabled
         && didEnterStableMatch(previousStability, nextStability);
 
@@ -382,7 +401,13 @@ export default function App() {
       let sourceUri: string | null = null;
       let preparedUri: string | null = null;
       try {
-        const frame = await cameraRef.current.takePictureAsync({ quality: 0.32, shutterSound: false });
+        photoCaptureRef.current = true;
+        let frame;
+        try {
+          frame = await cameraRef.current.takePictureAsync({ quality: 0.32, shutterSound: false });
+        } finally {
+          photoCaptureRef.current = false;
+        }
         if (!frame?.uri) {
           liveBusyRef.current = false;
           resetLiveStability();
@@ -406,6 +431,7 @@ export default function App() {
           cleanupUris: [sourceUri, preparedUri].filter((uri): uri is string => Boolean(uri)),
         });
       } catch (error) {
+        photoCaptureRef.current = false;
         cleanupTemporaryUri(sourceUri);
         cleanupTemporaryUri(preparedUri);
         liveBusyRef.current = false;
@@ -653,21 +679,27 @@ export default function App() {
     : guide.kind === 'food' ? 'MATCH OBJECT GUIDE' : 'MATCH COMPOSITION GUIDE';
 
   const liveHint = guide.kind === 'portrait'
-    ? matchStability.stableMatched
-      ? '✓ Stable match'
-      : holdingForStable
-        ? 'Hold position'
-        : (liveFeedback?.hint ?? (liveError ? 'Find the subject again' : 'Hold one person clearly inside the camera view.'))
+    ? liveError
+      ? (liveError.startsWith('Auto capture') ? 'Capture failed' : 'Find the subject again')
+      : matchStability.stableMatched
+        ? '✓ Stable match'
+        : holdingForStable
+          ? 'Hold position'
+          : (liveFeedback?.hint ?? 'Hold one person clearly inside the camera view.')
     : guide.kind === 'food' ? 'Match object size + spacing' : 'Line the scene up with the guide';
 
   const liveDetail = guide.kind === 'portrait'
-    ? matchStability.stableMatched
-      ? autoCaptureEnabled
-        ? 'Composition stayed matched. Auto Capture is armed for the next stable entry.'
-        : 'Composition stayed matched across samples. Ready to shoot.'
-      : holdingForStable
-        ? `Keep the pose steady for ${stabilityProgress.required - stabilityProgress.current} more matched sample.`
-        : (liveFeedback?.detail ?? liveError ?? 'Sampled matching updates about every 1–2 seconds.')
+    ? liveError
+      ? liveError
+      : matchStability.stableMatched
+        ? captureSource === 'auto'
+          ? 'Auto captured once for this stable period. Move or reframe before another automatic shot can trigger.'
+          : autoCaptureEnabled
+            ? 'Stable match. Auto Capture fires once per stable period.'
+            : 'Composition stayed matched across samples. Ready to shoot.'
+        : holdingForStable
+          ? `Keep the pose steady for ${stabilityProgress.required - stabilityProgress.current} more matched sample.`
+          : (liveFeedback?.detail ?? 'Sampled matching updates about every 1–2 seconds.')
     : guide.kind === 'food' ? 'Use the labeled zones as placement targets.' : 'Use the lines, zones, points and frames as composition anchors.';
 
   return (
@@ -689,8 +721,13 @@ export default function App() {
 
         {guide.kind === 'portrait' && (
           <Pressable
-            style={[styles.autoCaptureBadge, autoCaptureEnabled && styles.autoCaptureBadgeActive]}
-            onPress={() => setAutoCaptureEnabled((enabled) => !enabled)}
+            style={[
+              styles.autoCaptureBadge,
+              autoCaptureEnabled && styles.autoCaptureBadgeActive,
+              !liveEnabled && styles.autoCaptureBadgeDisabled,
+            ]}
+            onPress={toggleAutoCapture}
+            disabled={!liveEnabled}
           >
             <Text style={[styles.autoCaptureText, autoCaptureEnabled && styles.autoCaptureTextActive]}>
               AUTO {autoCaptureEnabled ? 'ON' : 'OFF'}
@@ -847,6 +884,7 @@ const styles = StyleSheet.create({
   liveBadgeSub: { color: '#A9ADB6', fontSize: 8, fontWeight: '800', letterSpacing: 0.9, marginTop: 2 },
   autoCaptureBadge: { position: 'absolute', top: 22, right: 12, paddingHorizontal: 10, paddingVertical: 7, borderRadius: 999, backgroundColor: 'rgba(0,0,0,0.62)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.22)' },
   autoCaptureBadgeActive: { backgroundColor: '#F8FF61', borderColor: '#F8FF61' },
+  autoCaptureBadgeDisabled: { opacity: 0.38 },
   autoCaptureText: { color: '#FFF', fontSize: 9, fontWeight: '900', letterSpacing: 0.7 },
   autoCaptureTextActive: { color: '#111315' },
   cameraPresetWrap: { position: 'absolute', top: 78, left: 12, right: 12, height: 40 },
