@@ -15,6 +15,7 @@
       }
     },
     "android": {
+      "package": "com.world4jason.boyfriendphotosavior",
       "permissions": ["CAMERA"]
     },
     "web": {
