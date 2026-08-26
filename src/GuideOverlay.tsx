@@ -51,7 +51,9 @@ const VISUALS: Record<GuideVisualStyle, VisualConfig> = {
     fillOpacity: 0,
     showGrid: false,
     showFrame: false,
-    showFaceDirection: false,
+    // Keep the SOVS-style silhouette clean, but preserve the one semantic cue
+    // that an outer contour cannot communicate by itself: where the face looks.
+    showFaceDirection: true,
   },
   recompose: {
     stroke: '#F8FF61',
