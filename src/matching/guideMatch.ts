@@ -198,8 +198,14 @@ export function scorePortraitMatch(targetGuide: GuideSpec, liveGuide: GuideSpec)
   if (faceScore != null) weighted.push([faceScore, 0.12]);
 
   const weightTotal = weighted.reduce((sum, [, weight]) => sum + weight, 0);
-  const rawScore = weighted.reduce((sum, [score, weight]) => sum + score * weight, 0) / Math.max(0.001, weightTotal);
+  const rawScore = weighted.reduce((sum, [componentScore, weight]) => sum + componentScore * weight, 0) / Math.max(0.001, weightTotal);
   const score = Math.round(clamp01(rawScore) * 100);
+
+  const componentsGood = framingScore >= 0.76
+    && scaleScore >= 0.76
+    && (pose.score == null || pose.score >= 0.72)
+    && (faceScore == null || faceScore >= 0.80);
+  const matched = score >= 86 && componentsGood;
 
   let hint = 'Hold it';
   let detail = 'Framing is close. Fine-tune the pose and face direction.';
@@ -219,7 +225,7 @@ export function scorePortraitMatch(targetGuide: GuideSpec, liveGuide: GuideSpec)
   } else if (targetFacing !== 'front' && targetFacing !== liveFacing) {
     hint = targetFacing === 'left' ? 'Face ← left' : 'Face → right';
     detail = 'Match the head direction from the reference.';
-  } else if (pose.score != null && pose.score < 0.70 && pose.worst) {
+  } else if (pose.score != null && pose.score < 0.72 && pose.worst) {
     const joint = humanizeJoint(pose.worst);
     if (pose.dy != null && Math.abs(pose.dy) > 0.10 && pose.worst.includes('wrist')) {
       hint = pose.dy > 0 ? `Raise ${joint}` : `Lower ${joint}`;
@@ -227,12 +233,12 @@ export function scorePortraitMatch(targetGuide: GuideSpec, liveGuide: GuideSpec)
       hint = `Adjust ${joint}`;
     }
     detail = 'Framing is close; now match the body shape.';
-  } else if (score >= 86) {
+  } else if (matched) {
     hint = '✓ Match';
     detail = 'Composition is close enough to shoot.';
   }
 
-  const status: MatchStatus = score >= 86
+  const status: MatchStatus = matched
     ? 'matched'
     : score >= 74
       ? 'close'
