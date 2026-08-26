@@ -1,8 +1,6 @@
 import React from 'react';
 import Svg, { Circle, Ellipse, Line, Path, Rect, Text as SvgText } from 'react-native-svg';
-import { GuideSpec, NormalizedPoint, PersonGuide } from './types';
-
-export type GuideVisualStyle = 'poseoverlay' | 'poseghost' | 'sovs' | 'recompose';
+import { GuideSpec, GuideVisualStyle, NormalizedPoint, PersonGuide } from './types';
 
 type Props = {
   guide: GuideSpec;
@@ -27,7 +25,6 @@ type VisualConfig = {
 };
 
 const VISUALS: Record<GuideVisualStyle, VisualConfig> = {
-  // Precision-first: strong, high-contrast contour.
   poseoverlay: {
     stroke: '#F8FF61',
     secondary: '#FFFFFF',
@@ -37,7 +34,6 @@ const VISUALS: Record<GuideVisualStyle, VisualConfig> = {
     showFrame: true,
     showFaceDirection: true,
   },
-  // Ghost-like: quiet translucent silhouette with a soft outer edge.
   poseghost: {
     stroke: '#FFFFFF',
     secondary: '#FFFFFF',
@@ -48,7 +44,6 @@ const VISUALS: Record<GuideVisualStyle, VisualConfig> = {
     showFaceDirection: false,
     glowWidth: 8,
   },
-  // SOVS-like: minimal silhouette intended for a person to physically step into.
   sovs: {
     stroke: '#FFFFFF',
     secondary: '#FFFFFF',
@@ -58,7 +53,6 @@ const VISUALS: Record<GuideVisualStyle, VisualConfig> = {
     showFrame: false,
     showFaceDirection: false,
   },
-  // reCompose-like: contour plus light composition placement structure.
   recompose: {
     stroke: '#F8FF61',
     secondary: '#FFFFFF',
@@ -76,9 +70,10 @@ export function GuideOverlay({
   width,
   height,
   opacity = 0.94,
-  visualStyle = 'sovs',
+  visualStyle,
 }: Props) {
-  const visual = VISUALS[visualStyle];
+  const style = visualStyle ?? guide.visualStyle ?? 'sovs';
+  const visual = VISUALS[style];
   const transform = guide.transform ?? { dx: 0, dy: 0, scale: 1 };
   const targetAspect = guide.aspectRatio && guide.aspectRatio > 0 ? guide.aspectRatio : 0.75;
   const containerAspect = width / Math.max(1, height);
@@ -98,8 +93,6 @@ export function GuideOverlay({
     return contour.map((p, index) => `${index === 0 ? 'M' : 'L'} ${tx(p.x)} ${ty(p.y)}`).join(' ') + ' Z';
   };
 
-  // Fallback presets may be derived from internal joints, but the user only sees tubes / envelopes,
-  // never a skeleton centre-line.
   const renderTubeSegment = (
     a: NormalizedPoint | undefined,
     b: NormalizedPoint | undefined,
@@ -264,10 +257,10 @@ export function GuideOverlay({
                 cx={tx(object.center.x)} cy={ty(object.center.y)}
                 rx={rx(object.rx)} ry={ry(object.ry)}
                 fill={visual.stroke}
-                fillOpacity={visualStyle === 'poseghost' ? 0.10 : guide.mode === 'simple' ? 0.055 : 0}
+                fillOpacity={style === 'poseghost' ? 0.10 : guide.mode === 'simple' ? 0.055 : 0}
                 stroke={visual.stroke}
                 strokeWidth={visual.strokeWidth}
-                strokeDasharray={visualStyle === 'recompose' ? '12 8' : guide.mode === 'simple' ? '10 8' : undefined}
+                strokeDasharray={style === 'recompose' ? '12 8' : guide.mode === 'simple' ? '10 8' : undefined}
                 strokeOpacity={opacity}
                 transform={object.rotation ? `rotate(${object.rotation} ${tx(object.center.x)} ${ty(object.center.y)})` : undefined}
               />
@@ -282,7 +275,7 @@ export function GuideOverlay({
         </>
       )}
 
-      {(visualStyle === 'poseoverlay' || visualStyle === 'recompose') && (
+      {(style === 'poseoverlay' || style === 'recompose') && (
         <SvgText x={frame.x + 14} y={frame.y + 28} fill={visual.secondary} fillOpacity={0.80} fontSize="12" fontWeight="700">
           {guide.kind === 'food' ? 'MATCH SIZE + RELATION' : `${guide.crop.toUpperCase()} · OUTER CONTOUR`}
         </SvgText>
