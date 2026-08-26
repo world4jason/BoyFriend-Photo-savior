@@ -85,9 +85,56 @@ When the camera can no longer produce a trustworthy live analysis result, the fi
 - **WHEN** a sampled frame cannot be captured or analyzed into a usable portrait guide
 - **THEN** temporal stable state and stale match feedback are cleared until a new valid sample arrives
 
-### Requirement: Future Auto Capture uses stable-entry transition
-A future Auto Capture feature SHALL trigger only when temporal state transitions from non-stable to stable, never from one raw sample and never repeatedly while stable state remains active.
+### Requirement: Auto Capture is explicit and portrait-only
+Auto Capture SHALL be available only for portrait Live Coach sessions and SHALL default to OFF whenever a camera session opens.
 
-#### Scenario: User holds a stable pose
-- **WHEN** stable match is reached and later samples remain stable
-- **THEN** the stable-entry event occurs once for that stable period
+#### Scenario: Portrait camera opens
+- **WHEN** the portrait camera screen opens
+- **THEN** Auto Capture is OFF until the photographer explicitly enables it
+
+#### Scenario: Food or scene camera opens
+- **WHEN** a food or scene guide opens the camera
+- **THEN** Auto Capture is unavailable
+
+### Requirement: Enabling Auto Capture requires fresh stability
+Enabling Auto Capture SHALL invalidate prior temporal stability and require a new stable period after opt-in.
+
+#### Scenario: User enables Auto Capture while already stable
+- **WHEN** the photographer turns Auto Capture ON after a previous stable match
+- **THEN** existing temporal match history is cleared and Auto Capture waits for a new stable-entry transition
+
+### Requirement: Auto Capture fires once per stable period
+Auto Capture SHALL trigger only when temporal state transitions from non-stable to stable and SHALL not repeatedly capture while stable remains active.
+
+#### Scenario: Stable entry
+- **WHEN** Auto Capture is enabled and temporal state enters stable match
+- **THEN** one high-quality photo capture is requested
+
+#### Scenario: User keeps holding the same pose
+- **WHEN** subsequent samples remain stable
+- **THEN** no additional automatic photo is captured
+
+#### Scenario: Stability is lost and regained
+- **WHEN** stable match clears and later a new stable period is reached while Auto Capture is still enabled
+- **THEN** one new automatic photo may be captured for the new stable-entry transition
+
+### Requirement: Camera captures are serialized
+Sampled analysis captures, manual shutter captures, and automatic captures SHALL not overlap `takePictureAsync()` calls.
+
+#### Scenario: Manual shutter during another capture
+- **WHEN** the photographer presses the manual shutter while another camera capture is still active
+- **THEN** the app does not start a second overlapping capture and provides lightweight feedback
+
+### Requirement: Stale live callbacks cannot trigger Auto Capture
+Live analysis results SHALL be associated with the active camera/coach session so results from an invalidated session cannot capture a photo or overwrite current live state.
+
+#### Scenario: User leaves camera while analysis is running
+- **WHEN** an older live-analysis result returns after the camera session has been invalidated
+- **THEN** the result is ignored for stability, feedback, and Auto Capture while its temporary resources are still cleaned up
+
+### Requirement: Auto Capture failure falls back to manual shutter
+A failed automatic photo capture SHALL not block manual shooting or crash the camera session.
+
+#### Scenario: Automatic capture fails
+- **WHEN** an Auto Capture request fails
+- **THEN** the camera displays lightweight failure feedback and the manual shutter remains available

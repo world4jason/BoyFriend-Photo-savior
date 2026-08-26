@@ -20,6 +20,7 @@ import { GuideOverlay } from './src/GuideOverlay';
 import { MatchFeedback, scorePortraitMatch } from './src/matching/guideMatch';
 import {
   advanceMatchStability,
+  didEnterStableMatch,
   MatchStabilityState,
   resetMatchStability,
   stableMatchProgress,
@@ -32,6 +33,7 @@ import { DEFAULT_GUIDE, GuideMode, GuidePreset, GuideSpec } from './src/types';
 
 type Screen = 'home' | 'reference' | 'camera';
 type AnalysisStatus = 'idle' | 'analyzing' | 'ready' | 'error' | 'preset';
+type CaptureSource = 'manual' | 'auto' | null;
 
 const FOOD_MODES: { key: GuideMode; label: string }[] = [
   { key: 'simple', label: 'Soft zones' },
@@ -69,6 +71,7 @@ export default function App() {
   const [guide, setGuide] = useState<GuideSpec>(cloneGuide(DEFAULT_GUIDE));
   const [permission, requestPermission] = useCameraPermissions();
   const [capturedUri, setCapturedUri] = useState<string | null>(null);
+  const [captureSource, setCaptureSource] = useState<CaptureSource>(null);
   const [showReference, setShowReference] = useState(true);
   const [analysisRequest, setAnalysisRequest] = useState<OutlineAnalysisRequest | null>(null);
   const [analysisStatus, setAnalysisStatus] = useState<AnalysisStatus>('idle');
@@ -76,6 +79,7 @@ export default function App() {
 
   const [cameraReady, setCameraReady] = useState(false);
   const [liveEnabled, setLiveEnabled] = useState(true);
+  const [autoCaptureEnabled, setAutoCaptureEnabled] = useState(false);
   const [liveRequest, setLiveRequest] = useState<OutlineAnalysisRequest | null>(null);
   const [liveFeedback, setLiveFeedback] = useState<MatchFeedback | null>(null);
   const [liveError, setLiveError] = useState('');
@@ -83,6 +87,8 @@ export default function App() {
 
   const cameraRef = useRef<CameraView | null>(null);
   const liveBusyRef = useRef(false);
+  const photoCaptureRef = useRef(false);
+  const liveSessionRef = useRef(0);
   const matchStabilityRef = useRef<MatchStabilityState>(resetMatchStability());
   const referencePrepareGenerationRef = useRef(0);
   const selectedPresetRef = useRef<GuidePreset>(DEFAULT_GUIDE.visualStyle ?? 'sovs');
@@ -122,6 +128,13 @@ export default function App() {
     setMatchStability(reset);
     setLiveFeedback(null);
   };
+
+  const invalidateLiveSession = () => {
+    liveSessionRef.current += 1;
+  };
+
+  const isCurrentLiveRequest = (request: OutlineAnalysisRequest) =>
+    request.sessionId != null && request.sessionId === liveSessionRef.current;
 
   const setGuidePreset = (preset: GuidePreset) => {
     selectedPresetRef.current = preset;
@@ -267,7 +280,11 @@ export default function App() {
         return;
       }
     }
+    invalidateLiveSession();
+    liveBusyRef.current = false;
     setCapturedUri(null);
+    setCaptureSource(null);
+    setAutoCaptureEnabled(false);
     setCameraReady(false);
     setLiveError('');
     resetLiveStability();
@@ -276,6 +293,7 @@ export default function App() {
   };
 
   const leaveCamera = () => {
+    invalidateLiveSession();
     cleanupRequestFiles(liveRequest);
     setCameraReady(false);
     setLiveRequest(null);
@@ -285,12 +303,14 @@ export default function App() {
   };
 
   const toggleLiveCoach = () => {
+    invalidateLiveSession();
     resetLiveStability();
+    cleanupRequestFiles(liveRequest);
+    setLiveRequest(null);
+    liveBusyRef.current = false;
     if (liveEnabled) {
-      cleanupRequestFiles(liveRequest);
-      setLiveRequest(null);
+      setAutoCaptureEnabled(false);
       setLiveError('');
-      liveBusyRef.current = false;
       setLiveEnabled(false);
       return;
     }
@@ -298,42 +318,102 @@ export default function App() {
     setLiveEnabled(true);
   };
 
+  const toggleAutoCapture = () => {
+    if (!liveEnabled) return;
+    const nextEnabled = !autoCaptureEnabled;
+    setAutoCaptureEnabled(nextEnabled);
+    setLiveError('');
+    if (nextEnabled) {
+      // Auto Capture must earn fresh stability after explicit opt-in. Invalidate
+      // any sampled image/analysis that began before the photographer opted in.
+      invalidateLiveSession();
+      cleanupRequestFiles(liveRequest);
+      setLiveRequest(null);
+      liveBusyRef.current = false;
+      resetLiveStability();
+    }
+  };
+
   const takePhoto = async () => {
     if (!cameraRef.current) return;
+    if (photoCaptureRef.current) {
+      setLiveError('Camera is finishing another capture. Try the shutter again.');
+      return;
+    }
+    invalidateLiveSession();
     cleanupRequestFiles(liveRequest);
     setLiveRequest(null);
+    setLiveError('');
+    photoCaptureRef.current = true;
     try {
       liveBusyRef.current = true;
       const photo = await cameraRef.current.takePictureAsync({ quality: 0.92 });
-      if (photo?.uri) setCapturedUri(photo.uri);
+      if (photo?.uri) {
+        setCapturedUri(photo.uri);
+        setCaptureSource('manual');
+      }
     } catch {
       Alert.alert('Could not capture photo', 'Please check camera permission and try again.');
     } finally {
+      photoCaptureRef.current = false;
       liveBusyRef.current = false;
     }
   };
 
-  const onLiveResult = (request: OutlineAnalysisRequest, detection: PersonContourDetection) => {
+  const onLiveResult = async (request: OutlineAnalysisRequest, detection: PersonContourDetection) => {
+    if (!isCurrentLiveRequest(request)) {
+      cleanupRequestFiles(request);
+      return;
+    }
+
     try {
       const liveGuide = buildGuideFromContour(detection, request.aspectRatio);
       const feedback = scorePortraitMatch(guide, liveGuide);
-      const nextStability = advanceMatchStability(matchStabilityRef.current, feedback);
+      const previousStability = matchStabilityRef.current;
+      const nextStability = advanceMatchStability(previousStability, feedback);
+      const shouldAutoCapture = guide.kind === 'portrait'
+        && liveEnabled
+        && autoCaptureEnabled
+        && didEnterStableMatch(previousStability, nextStability);
+
       matchStabilityRef.current = nextStability;
       setMatchStability(nextStability);
       setLiveFeedback(feedback);
       setLiveError('');
+
+      if (shouldAutoCapture && cameraRef.current && !photoCaptureRef.current) {
+        photoCaptureRef.current = true;
+        try {
+          const photo = await cameraRef.current.takePictureAsync({ quality: 0.92 });
+          if (isCurrentLiveRequest(request) && photo?.uri) {
+            setCapturedUri(photo.uri);
+            setCaptureSource('auto');
+          }
+        } catch {
+          if (isCurrentLiveRequest(request)) {
+            setLiveError('Auto capture failed. Use the shutter to take the photo.');
+          }
+        } finally {
+          photoCaptureRef.current = false;
+        }
+      }
     } catch (error) {
-      resetLiveStability();
-      setLiveError(error instanceof Error ? error.message : 'Could not match the live subject.');
+      if (isCurrentLiveRequest(request)) {
+        resetLiveStability();
+        setLiveError(error instanceof Error ? error.message : 'Could not match the live subject.');
+      }
     } finally {
       cleanupRequestFiles(request);
-      setLiveRequest(null);
-      liveBusyRef.current = false;
+      if (isCurrentLiveRequest(request)) {
+        setLiveRequest(null);
+        liveBusyRef.current = false;
+      }
     }
   };
 
   const onLiveError = (request: OutlineAnalysisRequest, message: string) => {
     cleanupRequestFiles(request);
+    if (!isCurrentLiveRequest(request)) return;
     resetLiveStability();
     setLiveError(message);
     setLiveRequest(null);
@@ -344,41 +424,53 @@ export default function App() {
     if (screen !== 'camera' || !cameraReady || !liveEnabled || guide.kind !== 'portrait') return;
     let cancelled = false;
     const sampleFrame = async () => {
-      if (cancelled || liveBusyRef.current || !cameraRef.current) return;
+      if (cancelled || liveBusyRef.current || photoCaptureRef.current || !cameraRef.current) return;
+      const sessionId = liveSessionRef.current;
       liveBusyRef.current = true;
       let sourceUri: string | null = null;
       let preparedUri: string | null = null;
       try {
-        const frame = await cameraRef.current.takePictureAsync({ quality: 0.32, shutterSound: false });
+        photoCaptureRef.current = true;
+        let frame;
+        try {
+          frame = await cameraRef.current.takePictureAsync({ quality: 0.32, shutterSound: false });
+        } finally {
+          photoCaptureRef.current = false;
+        }
         if (!frame?.uri) {
-          liveBusyRef.current = false;
-          resetLiveStability();
-          setLiveError('Live analysis frame was unavailable.');
+          if (sessionId === liveSessionRef.current) {
+            liveBusyRef.current = false;
+            resetLiveStability();
+            setLiveError('Live analysis frame was unavailable.');
+          }
           return;
         }
         sourceUri = frame.uri;
         const prepared = await prepareAnalysisImage(frame.uri, frame.width, frame.height, 720, 0.52);
         preparedUri = prepared.temporaryUri ?? null;
-        if (cancelled) {
+        if (cancelled || sessionId !== liveSessionRef.current) {
           cleanupTemporaryUri(sourceUri);
           cleanupTemporaryUri(preparedUri);
-          liveBusyRef.current = false;
           return;
         }
-        setLiveRequest({
+        const request: OutlineAnalysisRequest = {
           id: `live-${Date.now()}-${Math.random().toString(36).slice(2)}`,
           dataUrl: prepared.dataUrl,
           sourceUri: frame.uri,
           aspectRatio: frame.width && frame.height ? frame.width / frame.height : (guide.aspectRatio ?? 0.75),
+          sessionId,
           cleanupUris: [sourceUri, preparedUri].filter((uri): uri is string => Boolean(uri)),
-        });
+        };
+        setLiveRequest(request);
       } catch (error) {
         cleanupTemporaryUri(sourceUri);
         cleanupTemporaryUri(preparedUri);
-        liveBusyRef.current = false;
-        if (!cancelled) {
-          resetLiveStability();
-          setLiveError(error instanceof Error ? error.message : 'Live sampling failed.');
+        if (sessionId === liveSessionRef.current) {
+          liveBusyRef.current = false;
+          if (!cancelled) {
+            resetLiveStability();
+            setLiveError(error instanceof Error ? error.message : 'Live sampling failed.');
+          }
         }
       }
     };
@@ -620,19 +712,25 @@ export default function App() {
     : guide.kind === 'food' ? 'MATCH OBJECT GUIDE' : 'MATCH COMPOSITION GUIDE';
 
   const liveHint = guide.kind === 'portrait'
-    ? matchStability.stableMatched
-      ? '✓ Stable match'
-      : holdingForStable
-        ? 'Hold position'
-        : (liveFeedback?.hint ?? (liveError ? 'Find the subject again' : 'Hold one person clearly inside the camera view.'))
+    ? liveError
+      ? (liveError.toLowerCase().includes('capture') ? 'Capture unavailable' : 'Find the subject again')
+      : matchStability.stableMatched
+        ? '✓ Stable match'
+        : holdingForStable
+          ? 'Hold position'
+          : (liveFeedback?.hint ?? 'Hold one person clearly inside the camera view.')
     : guide.kind === 'food' ? 'Match object size + spacing' : 'Line the scene up with the guide';
 
   const liveDetail = guide.kind === 'portrait'
-    ? matchStability.stableMatched
-      ? 'Composition stayed matched across samples. Ready to shoot.'
-      : holdingForStable
-        ? `Keep the pose steady for ${stabilityProgress.required - stabilityProgress.current} more matched sample.`
-        : (liveFeedback?.detail ?? liveError ?? 'Sampled matching updates about every 1–2 seconds.')
+    ? liveError
+      ? liveError
+      : matchStability.stableMatched
+        ? autoCaptureEnabled
+          ? 'Stable match. Auto Capture fires once when each stable period begins.'
+          : 'Composition stayed matched across samples. Ready to shoot.'
+        : holdingForStable
+          ? `Keep the pose steady for ${stabilityProgress.required - stabilityProgress.current} more matched sample.`
+          : (liveFeedback?.detail ?? 'Sampled matching updates about every 1–2 seconds.')
     : guide.kind === 'food' ? 'Use the labeled zones as placement targets.' : 'Use the lines, zones, points and frames as composition anchors.';
 
   return (
@@ -651,6 +749,22 @@ export default function App() {
           <Text style={styles.liveBadgeText}>{matchLabel}</Text>
           {guide.kind === 'portrait' && <Text style={styles.liveBadgeSub}>LIVE COACH · SAMPLED</Text>}
         </Pressable>
+
+        {guide.kind === 'portrait' && (
+          <Pressable
+            style={[
+              styles.autoCaptureBadge,
+              autoCaptureEnabled && styles.autoCaptureBadgeActive,
+              !liveEnabled && styles.autoCaptureBadgeDisabled,
+            ]}
+            onPress={toggleAutoCapture}
+            disabled={!liveEnabled}
+          >
+            <Text style={[styles.autoCaptureText, autoCaptureEnabled && styles.autoCaptureTextActive]}>
+              AUTO {autoCaptureEnabled ? 'ON' : 'OFF'}
+            </Text>
+          </Pressable>
+        )}
 
         {guide.kind === 'portrait' && (
           <View style={styles.cameraPresetWrap}>
@@ -684,7 +798,7 @@ export default function App() {
         {capturedUri && (
           <View style={styles.capturedPreview}>
             <Image source={{ uri: capturedUri }} style={styles.capturedImage} />
-            <Text style={styles.capturedText}>Captured</Text>
+            <Text style={styles.capturedText}>{captureSource === 'auto' ? 'Auto captured' : 'Captured'}</Text>
           </View>
         )}
 
@@ -799,6 +913,11 @@ const styles = StyleSheet.create({
   liveBadgeMatched: { backgroundColor: 'rgba(29,75,45,0.88)', borderColor: '#85F3A7' },
   liveBadgeText: { color: '#F8FF61', fontSize: 12, fontWeight: '900', letterSpacing: 0.7 },
   liveBadgeSub: { color: '#A9ADB6', fontSize: 8, fontWeight: '800', letterSpacing: 0.9, marginTop: 2 },
+  autoCaptureBadge: { position: 'absolute', top: 22, right: 12, paddingHorizontal: 10, paddingVertical: 7, borderRadius: 999, backgroundColor: 'rgba(0,0,0,0.62)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.22)' },
+  autoCaptureBadgeActive: { backgroundColor: '#F8FF61', borderColor: '#F8FF61' },
+  autoCaptureBadgeDisabled: { opacity: 0.38 },
+  autoCaptureText: { color: '#FFF', fontSize: 9, fontWeight: '900', letterSpacing: 0.7 },
+  autoCaptureTextActive: { color: '#111315' },
   cameraPresetWrap: { position: 'absolute', top: 78, left: 12, right: 12, height: 40 },
   cameraPresetRow: { gap: 7, paddingHorizontal: 2, alignItems: 'center' },
   cameraPresetButton: { minWidth: 70, paddingHorizontal: 10, paddingVertical: 7, borderRadius: 999, alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.58)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.22)' },
