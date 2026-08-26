@@ -463,7 +463,6 @@ export default function App() {
         };
         setLiveRequest(request);
       } catch (error) {
-        photoCaptureRef.current = false;
         cleanupTemporaryUri(sourceUri);
         cleanupTemporaryUri(preparedUri);
         if (sessionId === liveSessionRef.current) {
