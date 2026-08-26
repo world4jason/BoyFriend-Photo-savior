@@ -1,6 +1,17 @@
 export type GuideMode = 'simple' | 'outline';
 export type GuideKind = 'portrait' | 'food';
-export type GuideVisualStyle = 'poseoverlay' | 'poseghost' | 'sovs' | 'recompose';
+
+/**
+ * Four photographer-facing guide presets inspired by benchmark products.
+ *
+ * - sovs: clean step-in outer contour (SOVS / SOVS2-like)
+ * - poseoverlay: explicit pose skeleton + matching cues (PoseOverlay-like)
+ * - poseghost: translucent filled silhouette (PoseGhost-like)
+ * - recompose: semantic composition zones / lines / labels (reCompose-like)
+ */
+export type GuidePreset = 'sovs' | 'poseoverlay' | 'poseghost' | 'recompose';
+/** Backward-compatible name used by existing renderer/sample code. */
+export type GuideVisualStyle = GuidePreset;
 
 export type NormalizedPoint = { x: number; y: number };
 
@@ -11,8 +22,9 @@ export type GuideTransform = {
 };
 
 /**
- * Pose joints are internal geometry only. They may be used to derive a fallback
- * contour for presets, but they are never rendered as a skeleton to the user.
+ * Pose joints are shared geometry. They stay hidden in SOVS/PoseGhost/reCompose
+ * modes, but are intentionally rendered when the user explicitly chooses the
+ * PoseOverlay-like skeleton preset.
  */
 export type PoseJoints = {
   leftElbow?: NormalizedPoint;
@@ -28,10 +40,7 @@ export type PoseJoints = {
 };
 
 export type PersonGuide = {
-  /**
-   * Closed outer contour in source-image normalized coordinates.
-   * Segmentation-based references should populate this field.
-   */
+  /** Closed outer contour in source-image normalized coordinates. */
   contour?: NormalizedPoint[];
   head: {
     center: NormalizedPoint;
@@ -62,11 +71,8 @@ export type ObjectGuide = {
 export type GuideSpec = {
   kind: GuideKind;
   mode: GuideMode;
-  /**
-   * Visual treatment only. For people, every style still renders an outside contour;
-   * none of these options is allowed to render a stick-figure skeleton.
-   */
-  visualStyle?: GuideVisualStyle;
+  /** Photographer-facing representation preset. */
+  visualStyle?: GuidePreset;
   people: PersonGuide[];
   objects?: ObjectGuide[];
   crop: 'headshot' | 'half' | 'three-quarter' | 'full' | 'tabletop';
