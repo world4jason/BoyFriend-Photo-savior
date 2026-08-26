@@ -1,5 +1,6 @@
 export type GuideMode = 'simple' | 'outline';
 export type GuideKind = 'portrait' | 'food';
+export type GuideVisualStyle = 'poseoverlay' | 'poseghost' | 'sovs' | 'recompose';
 
 export type NormalizedPoint = { x: number; y: number };
 
@@ -61,6 +62,11 @@ export type ObjectGuide = {
 export type GuideSpec = {
   kind: GuideKind;
   mode: GuideMode;
+  /**
+   * Visual treatment only. For people, every style still renders an outside contour;
+   * none of these options is allowed to render a stick-figure skeleton.
+   */
+  visualStyle?: GuideVisualStyle;
   people: PersonGuide[];
   objects?: ObjectGuide[];
   crop: 'headshot' | 'half' | 'three-quarter' | 'full' | 'tabletop';
@@ -88,6 +94,7 @@ export const DEFAULT_PERSON: PersonGuide = {
 export const DEFAULT_GUIDE: GuideSpec = {
   kind: 'portrait',
   mode: 'outline',
+  visualStyle: 'sovs',
   people: [DEFAULT_PERSON],
   crop: 'half',
   lookSpace: 'left',
