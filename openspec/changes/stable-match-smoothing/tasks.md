@@ -11,7 +11,7 @@
 - [x] Preserve stability across display-mode-only changes.
 - [x] Update camera UI to distinguish raw hold progress from stable match.
 - [x] Update current `live-coach` spec after implementation review.
-- [ ] Clear stale `liveFeedback` on camera-sample capture failure paths.
+- [x] Clear stale `liveFeedback` on camera-sample capture failure paths.
 - [ ] Run `npm run spec:validate` when a runnable environment is available.
 - [ ] Run `npm run typecheck` when a runnable environment is available.
 - [ ] Run `npm run export:web` when a runnable environment is available.
