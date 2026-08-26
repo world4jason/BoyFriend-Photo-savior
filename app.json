@@ -19,7 +19,8 @@
       "permissions": ["CAMERA"]
     },
     "web": {
-      "bundler": "metro"
+      "bundler": "metro",
+      "output": "single"
     },
     "plugins": [
       ["expo-camera", {"cameraPermission": "Allow BoyFriend Photo Savior to use your camera."}],
