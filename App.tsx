@@ -20,6 +20,7 @@ import { GuideOverlay } from './src/GuideOverlay';
 import { MatchFeedback, scorePortraitMatch } from './src/matching/guideMatch';
 import {
   advanceMatchStability,
+  didEnterStableMatch,
   MatchStabilityState,
   resetMatchStability,
   stableMatchProgress,
@@ -32,6 +33,7 @@ import { DEFAULT_GUIDE, GuideMode, GuidePreset, GuideSpec } from './src/types';
 
 type Screen = 'home' | 'reference' | 'camera';
 type AnalysisStatus = 'idle' | 'analyzing' | 'ready' | 'error' | 'preset';
+type CaptureSource = 'manual' | 'auto' | null;
 
 const FOOD_MODES: { key: GuideMode; label: string }[] = [
   { key: 'simple', label: 'Soft zones' },
@@ -69,6 +71,7 @@ export default function App() {
   const [guide, setGuide] = useState<GuideSpec>(cloneGuide(DEFAULT_GUIDE));
   const [permission, requestPermission] = useCameraPermissions();
   const [capturedUri, setCapturedUri] = useState<string | null>(null);
+  const [captureSource, setCaptureSource] = useState<CaptureSource>(null);
   const [showReference, setShowReference] = useState(true);
   const [analysisRequest, setAnalysisRequest] = useState<OutlineAnalysisRequest | null>(null);
   const [analysisStatus, setAnalysisStatus] = useState<AnalysisStatus>('idle');
@@ -76,6 +79,7 @@ export default function App() {
 
   const [cameraReady, setCameraReady] = useState(false);
   const [liveEnabled, setLiveEnabled] = useState(true);
+  const [autoCaptureEnabled, setAutoCaptureEnabled] = useState(false);
   const [liveRequest, setLiveRequest] = useState<OutlineAnalysisRequest | null>(null);
   const [liveFeedback, setLiveFeedback] = useState<MatchFeedback | null>(null);
   const [liveError, setLiveError] = useState('');
@@ -83,6 +87,7 @@ export default function App() {
 
   const cameraRef = useRef<CameraView | null>(null);
   const liveBusyRef = useRef(false);
+  const photoCaptureRef = useRef(false);
   const matchStabilityRef = useRef<MatchStabilityState>(resetMatchStability());
   const referencePrepareGenerationRef = useRef(0);
   const selectedPresetRef = useRef<GuidePreset>(DEFAULT_GUIDE.visualStyle ?? 'sovs');
@@ -268,6 +273,8 @@ export default function App() {
       }
     }
     setCapturedUri(null);
+    setCaptureSource(null);
+    setAutoCaptureEnabled(false);
     setCameraReady(false);
     setLiveError('');
     resetLiveStability();
@@ -281,6 +288,7 @@ export default function App() {
     setLiveRequest(null);
     resetLiveStability();
     liveBusyRef.current = false;
+    photoCaptureRef.current = false;
     setScreen('reference');
   };
 
@@ -299,29 +307,54 @@ export default function App() {
   };
 
   const takePhoto = async () => {
-    if (!cameraRef.current) return;
+    if (!cameraRef.current || photoCaptureRef.current) return;
     cleanupRequestFiles(liveRequest);
     setLiveRequest(null);
+    photoCaptureRef.current = true;
     try {
       liveBusyRef.current = true;
       const photo = await cameraRef.current.takePictureAsync({ quality: 0.92 });
-      if (photo?.uri) setCapturedUri(photo.uri);
+      if (photo?.uri) {
+        setCapturedUri(photo.uri);
+        setCaptureSource('manual');
+      }
     } catch {
       Alert.alert('Could not capture photo', 'Please check camera permission and try again.');
     } finally {
+      photoCaptureRef.current = false;
       liveBusyRef.current = false;
     }
   };
 
-  const onLiveResult = (request: OutlineAnalysisRequest, detection: PersonContourDetection) => {
+  const onLiveResult = async (request: OutlineAnalysisRequest, detection: PersonContourDetection) => {
     try {
       const liveGuide = buildGuideFromContour(detection, request.aspectRatio);
       const feedback = scorePortraitMatch(guide, liveGuide);
-      const nextStability = advanceMatchStability(matchStabilityRef.current, feedback);
+      const previousStability = matchStabilityRef.current;
+      const nextStability = advanceMatchStability(previousStability, feedback);
+      const shouldAutoCapture = guide.kind === 'portrait'
+        && autoCaptureEnabled
+        && didEnterStableMatch(previousStability, nextStability);
+
       matchStabilityRef.current = nextStability;
       setMatchStability(nextStability);
       setLiveFeedback(feedback);
       setLiveError('');
+
+      if (shouldAutoCapture && cameraRef.current && !photoCaptureRef.current) {
+        photoCaptureRef.current = true;
+        try {
+          const photo = await cameraRef.current.takePictureAsync({ quality: 0.92 });
+          if (photo?.uri) {
+            setCapturedUri(photo.uri);
+            setCaptureSource('auto');
+          }
+        } catch {
+          setLiveError('Auto capture failed. Use the shutter to take the photo.');
+        } finally {
+          photoCaptureRef.current = false;
+        }
+      }
     } catch (error) {
       resetLiveStability();
       setLiveError(error instanceof Error ? error.message : 'Could not match the live subject.');
@@ -344,7 +377,7 @@ export default function App() {
     if (screen !== 'camera' || !cameraReady || !liveEnabled || guide.kind !== 'portrait') return;
     let cancelled = false;
     const sampleFrame = async () => {
-      if (cancelled || liveBusyRef.current || !cameraRef.current) return;
+      if (cancelled || liveBusyRef.current || photoCaptureRef.current || !cameraRef.current) return;
       liveBusyRef.current = true;
       let sourceUri: string | null = null;
       let preparedUri: string | null = null;
@@ -629,7 +662,9 @@ export default function App() {
 
   const liveDetail = guide.kind === 'portrait'
     ? matchStability.stableMatched
-      ? 'Composition stayed matched across samples. Ready to shoot.'
+      ? autoCaptureEnabled
+        ? 'Composition stayed matched. Auto Capture is armed for the next stable entry.'
+        : 'Composition stayed matched across samples. Ready to shoot.'
       : holdingForStable
         ? `Keep the pose steady for ${stabilityProgress.required - stabilityProgress.current} more matched sample.`
         : (liveFeedback?.detail ?? liveError ?? 'Sampled matching updates about every 1–2 seconds.')
@@ -651,6 +686,17 @@ export default function App() {
           <Text style={styles.liveBadgeText}>{matchLabel}</Text>
           {guide.kind === 'portrait' && <Text style={styles.liveBadgeSub}>LIVE COACH · SAMPLED</Text>}
         </Pressable>
+
+        {guide.kind === 'portrait' && (
+          <Pressable
+            style={[styles.autoCaptureBadge, autoCaptureEnabled && styles.autoCaptureBadgeActive]}
+            onPress={() => setAutoCaptureEnabled((enabled) => !enabled)}
+          >
+            <Text style={[styles.autoCaptureText, autoCaptureEnabled && styles.autoCaptureTextActive]}>
+              AUTO {autoCaptureEnabled ? 'ON' : 'OFF'}
+            </Text>
+          </Pressable>
+        )}
 
         {guide.kind === 'portrait' && (
           <View style={styles.cameraPresetWrap}>
@@ -684,7 +730,7 @@ export default function App() {
         {capturedUri && (
           <View style={styles.capturedPreview}>
             <Image source={{ uri: capturedUri }} style={styles.capturedImage} />
-            <Text style={styles.capturedText}>Captured</Text>
+            <Text style={styles.capturedText}>{captureSource === 'auto' ? 'Auto captured' : 'Captured'}</Text>
           </View>
         )}
 
@@ -799,6 +845,10 @@ const styles = StyleSheet.create({
   liveBadgeMatched: { backgroundColor: 'rgba(29,75,45,0.88)', borderColor: '#85F3A7' },
   liveBadgeText: { color: '#F8FF61', fontSize: 12, fontWeight: '900', letterSpacing: 0.7 },
   liveBadgeSub: { color: '#A9ADB6', fontSize: 8, fontWeight: '800', letterSpacing: 0.9, marginTop: 2 },
+  autoCaptureBadge: { position: 'absolute', top: 22, right: 12, paddingHorizontal: 10, paddingVertical: 7, borderRadius: 999, backgroundColor: 'rgba(0,0,0,0.62)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.22)' },
+  autoCaptureBadgeActive: { backgroundColor: '#F8FF61', borderColor: '#F8FF61' },
+  autoCaptureText: { color: '#FFF', fontSize: 9, fontWeight: '900', letterSpacing: 0.7 },
+  autoCaptureTextActive: { color: '#111315' },
   cameraPresetWrap: { position: 'absolute', top: 78, left: 12, right: 12, height: 40 },
   cameraPresetRow: { gap: 7, paddingHorizontal: 2, alignItems: 'center' },
   cameraPresetButton: { minWidth: 70, paddingHorizontal: 10, paddingVertical: 7, borderRadius: 999, alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.58)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.22)' },
