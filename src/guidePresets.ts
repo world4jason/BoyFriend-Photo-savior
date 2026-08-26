@@ -2,55 +2,59 @@ import { GuideKind, GuidePreset } from './types';
 
 export type GuidePresetDefinition = {
   key: GuidePreset;
-  label: string;
+  /** Product-facing mode name: Outline / Skeleton / Ghost / Guide. */
   shortLabel: string;
+  /** Benchmark reference only; not the primary product name. */
+  benchmarkLabel: string;
+  /** Backward-compatible UI alias for benchmarkLabel. */
+  label: string;
   description: string;
   layers: string[];
   supportedKinds: GuideKind[];
   benchmarkUrl: string;
 };
 
+const mode = (
+  key: GuidePreset,
+  shortLabel: string,
+  benchmarkLabel: string,
+  description: string,
+  layers: string[],
+  supportedKinds: GuideKind[],
+  benchmarkUrl: string,
+): GuidePresetDefinition => ({
+  key, shortLabel, benchmarkLabel, label: benchmarkLabel, description, layers, supportedKinds, benchmarkUrl,
+});
+
 /**
- * Product presets are inspired by interaction patterns, not copied product assets.
- * Geometry comes from our own reference analysis / template library.
+ * The product has four display modes. Benchmark brands document the interaction
+ * patterns we studied; they are not the primary user-facing taxonomy.
  */
 export const GUIDE_PRESETS: GuidePresetDefinition[] = [
-  {
-    key: 'sovs',
-    label: 'SOVS-like',
-    shortLabel: 'Outline',
-    description: 'Clean outside contour. Put the real person inside the silhouette.',
-    layers: ['outer contour', 'optional face direction'],
-    supportedKinds: ['portrait'],
-    benchmarkUrl: 'https://apppage.net/preview/me.sovs.sovs2',
-  },
-  {
-    key: 'poseoverlay',
-    label: 'PoseOverlay-like',
-    shortLabel: 'Skeleton',
-    description: 'Explicit body skeleton for precise pose matching and pose coaching.',
-    layers: ['skeleton', 'joint anchors', 'face direction'],
-    supportedKinds: ['portrait'],
-    benchmarkUrl: 'https://poseoverlay.com/features/copy-this-pose',
-  },
-  {
-    key: 'poseghost',
-    label: 'PoseGhost-like',
-    shortLabel: 'Ghost',
-    description: 'Semi-transparent filled silhouette that behaves like a pose stencil.',
-    layers: ['filled silhouette', 'outer contour'],
-    supportedKinds: ['portrait'],
-    benchmarkUrl: 'https://play.google.com/store/apps/details?id=nz.dev.poseghost',
-  },
-  {
-    key: 'recompose',
-    label: 'reCompose-like',
-    shortLabel: 'Guide',
-    description: 'Semantic composition guide: zones, eye lines, look space, object relationships and short hints.',
-    layers: ['composition zones', 'grid / lines', 'labels', 'look space'],
-    supportedKinds: ['portrait', 'food'],
-    benchmarkUrl: 'https://recompose.camera/',
-  },
+  mode(
+    'sovs', 'Outline', 'SOVS / SOVS2-like',
+    'Clean outside contour. Put the real person inside the silhouette.',
+    ['outer contour', 'optional face direction'], ['portrait'],
+    'https://apppage.net/preview/me.sovs.sovs2',
+  ),
+  mode(
+    'poseoverlay', 'Skeleton', 'PoseOverlay-like',
+    'Explicit body skeleton and joint anchors for precise pose matching.',
+    ['skeleton', 'joint anchors', 'face direction'], ['portrait'],
+    'https://poseoverlay.com/features/copy-this-pose',
+  ),
+  mode(
+    'poseghost', 'Ghost', 'PoseGhost-like',
+    'Semi-transparent filled silhouette that behaves like a pose stencil.',
+    ['filled silhouette', 'outer contour'], ['portrait'],
+    'https://play.google.com/store/apps/details?id=nz.dev.poseghost',
+  ),
+  mode(
+    'recompose', 'Guide', 'reCompose-like',
+    'Semantic composition zones, lines, labels, look space and object relationships.',
+    ['composition zones', 'lines / frames', 'labels', 'look space'], ['portrait', 'food', 'scene'],
+    'https://recompose.camera/',
+  ),
 ];
 
 export const getGuidePreset = (key: GuidePreset) =>

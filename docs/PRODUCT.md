@@ -4,107 +4,152 @@ This document is the product contract for **BoyFriend Photo Savior**. New featur
 
 ## Product sentence
 
-> Turn a reference photo into a minimal, actionable shooting guide so a non-photographer can reproduce the important composition without memorizing it.
+> Turn a reference photo or a reusable shooting template into a minimal, actionable camera guide so a non-photographer can reproduce the important composition without memorizing it.
 
-The primary flow is always:
+The primary flow is:
 
 ```text
-reference photo
-    -> understand composition once
-    -> shared guide geometry
-    -> choose a guide preset
+reference photo OR template
+    -> understand / load geometry once
+    -> choose a display mode
     -> live camera
     -> one useful correction at a time
     -> photo
 ```
 
-## The four guide presets
+## Core product model: Mode vs Template
 
-The benchmark product names describe **four representations of the same underlying composition geometry**, not four unrelated analysis pipelines.
+These are two different concepts and should never be mixed in UI or code reviews.
 
-| Preset | Benchmark | Photographer sees | Best for |
+### A. Display Mode = how the guide is shown
+
+There are exactly four core display modes:
+
+| Product mode | Benchmark inspiration | Photographer sees | Best for |
 | --- | --- | --- | --- |
-| `sovs` / Outline | SOVS / SOVS2 | clean outside contour | easiest step-in portrait framing |
-| `poseoverlay` / Skeleton | PoseOverlay | body skeleton + anchors | precise pose / hands / limbs |
-| `poseghost` / Ghost | PoseGhost | translucent filled silhouette | fast stencil-like alignment |
-| `recompose` / Guide | reCompose | zones, grids, eye lines, labels, relationships | semantic composition; especially food/objects |
+| **Outline** | SOVS / SOVS2 | clean outside contour | fastest “stand inside this shape” instruction |
+| **Skeleton** | PoseOverlay | body skeleton + joint anchors | precise body/hand/leg placement |
+| **Ghost** | PoseGhost | translucent filled silhouette | quick stencil-like overlap |
+| **Guide** | reCompose | zones, grids, eye lines, labels, relationships | composition, food, objects, scenes |
 
-A reference should be analyzed **once**. The user can then switch renderer/preset without rerunning segmentation or pose detection.
+**Outline / Skeleton / Ghost / Guide are the product names.** Brand names should appear only in research/benchmark documentation or small secondary labels.
 
-See [`BENCHMARKS.md`](BENCHMARKS.md) for source research and template seeds.
+For a portrait reference, analysis happens **once** and the user may switch Outline / Skeleton / Ghost / Guide without rerunning ML.
+
+### B. Template = what shot/pose/composition to make
+
+A template is a reusable target geometry, for example:
+
+```text
+Power Stance
+Wall Lean
+Over the Shoulder
+Couple Walk
+Two-person Stagger
+Plate + Glass
+Big Sky
+Leading Lines
+Peak + Anchor
+```
+
+A template has one recommended/default display mode, but the mode and template are independent where the geometry supports it.
+
+Examples:
+
+```text
+Power Stance template
+    -> default Skeleton
+    -> user may switch to Outline / Ghost / Guide
+
+Over-the-shoulder template
+    -> default Ghost
+    -> user may switch to Outline / Skeleton / Guide
+
+Plate + Glass template
+    -> Guide only for now
+```
+
+### C. Live Coach is not a fifth mode
+
+Live Coach is an orthogonal assistance layer.
+
+```text
+Outline  + Live Coach
+Skeleton + Live Coach
+Ghost    + Live Coach
+Guide    + Live Coach
+```
+
+It compares the same underlying target geometry with the current camera subject and produces one prioritized instruction.
+
+## Shared geometry
+
+Do not maintain four incompatible versions of the same reference.
+
+The analyzer/template should build one shared model containing as much as available:
+
+```text
+person contour
+pose joints
+face direction
+subject bounds
+object bounds
+composition lines / zones / points / frames
+```
+
+The display mode only decides which layers to render:
+
+- **Outline** reads contour / fallback body envelope.
+- **Skeleton** reads body joints.
+- **Ghost** reads contour as translucent fill.
+- **Guide** reads semantic annotations, subject/object zones and relationships.
 
 ## Non-negotiable principles
 
 ### 1. Reference-to-guide, not raw reference overlay
 
-The default shooting experience must not be a semi-transparent copy of the source photo. The product should extract only information needed to reproduce the composition.
+The default shooting experience must not simply place the whole source image at 50% opacity. The product should retain only information needed to reproduce the shot.
 
-For a portrait this may include:
+A raw-photo ghost can exist as an optional debug/reference aid, but it is not one of the four core display modes.
 
-- subject position and size
-- outside contour
-- pose joints
-- head position
-- face direction
-- important hand / leg placement
-- crop and look space
-- relationships between multiple people
+### 2. Outline is the default portrait mode
 
-For food or objects this may include:
+For arbitrary uploaded portraits, default to **Outline** because it is the most glanceable to a casual photographer.
 
-- number of objects
-- relative size
-- center / bounding zone
-- foreground/background ordering
-- spacing
-- angle or rotation when compositionally meaningful
+Skeleton is a real user-facing feature, but only when the user explicitly chooses **Skeleton**. Do not dump raw CV diagnostics.
 
-A raw-photo ghost overlay can exist as a debug or optional reference aid, but it is not one of the four core guide presets.
+Useful Skeleton:
 
-### 2. Outline is the default; skeleton is explicit
+- head marker
+- shoulder line
+- spine / hip line
+- arms / legs
+- meaningful joint anchors
 
-For portraits, **SOVS-like Outline is the default** because it is the most glanceable for a casual photographer.
+Not useful product UI:
 
-Pose landmarks and face landmarks are shared geometry. They are normally hidden, but an explicit **PoseOverlay-like Skeleton** preset is allowed and expected to render body joints/segments when the user asks for precision.
+- all model landmarks with no hierarchy
+- face mesh
+- confidence values on every point
+- segmentation mask pixels
 
-Do not expose dense CV debug information such as:
+### 3. Guide mode is semantic, not just a grid
 
-- all 33 pose points without a useful skeleton structure
-- face mesh points
-- raw segmentation masks
-- model confidence dumps
+Guide mode must be able to describe composition beyond a person box.
 
-The distinction is:
+Supported primitive concepts include:
 
-```text
-useful photographer skeleton = product feature
-raw landmark/debug visualization = implementation detail
-```
+- lines / horizon / leading lines
+- zones / subject regions
+- anchor points / golden points
+- frames / frame-within-frame
+- eye line / look space
+- object relationship / near-far relationship
+- one-line labels or hints
 
-### 3. The four presets are views, not separate truth
+This is required for food, travel, street, landscape and architecture templates.
 
-Do not maintain four incompatible copies of a reference pose.
-
-The analyzer should produce a shared model containing as much as available:
-
-```text
-contour
-pose joints
-face direction
-subject/object bounds
-composition semantics
-```
-
-Renderers decide what to show:
-
-- Outline reads contour.
-- Skeleton reads joints.
-- Ghost reads contour as translucent fill.
-- Guide reads subject/object/composition semantics.
-
-This makes switching instant and keeps matching consistent.
-
-### 4. Composition matters more than exact pose equality
+### 4. Composition matters more than anatomical equality
 
 The app is a photography assistant, not an exercise-form checker.
 
@@ -112,15 +157,15 @@ Matching priority is roughly:
 
 1. subject position
 2. subject scale / crop
-3. overall body shape
+3. overall body or object relationship
 4. face direction
 5. smaller limb differences
 
-Even in Skeleton mode, do not punish harmless anatomical differences if the resulting photograph has the same visual composition.
+Even in Skeleton mode, do not punish harmless anatomical differences if the resulting photograph preserves the visual composition.
 
 ### 5. One instruction at a time
 
-Live coaching should answer one question:
+Live coaching should answer:
 
 > What is the single most useful thing to change right now?
 
@@ -130,13 +175,11 @@ Good examples:
 - `Move closer`
 - `Face -> right`
 - `Raise left wrist`
+- `Plate farther right`
+- `Lower the horizon`
 - `✓ Match`
 
-Avoid simultaneously showing a checklist of corrections. Component scores can exist as secondary/debug information, but the primary UI is one action.
-
 ### 6. The guide must be glanceable
-
-The photographer should understand the viewfinder without reading instructions for several seconds.
 
 Prefer:
 
@@ -145,98 +188,150 @@ Prefer:
 - ghost silhouette
 - zones
 - arrows
-- very short labels
+- short labels
 - clear matched/not-matched state
 
-Avoid permanent explanatory paragraphs in the camera view.
+Avoid permanent explanation-heavy UI in the camera.
 
-### 7. Never pretend a capability is more real-time or accurate than it is
+### 7. Never overclaim capability
 
-The current Expo Camera MVP uses sampled still frames, so the UI calls it **Sampled Live Coach**. Do not describe it as 30 FPS tracking.
+The current Expo Camera MVP uses sampled still frames, so it is **Sampled Live Coach**, not 30 FPS realtime tracking.
 
 Likewise:
 
 - approximate face yaw is not a calibrated physical angle
-- heuristic food zones are not object segmentation
 - one-person segmentation is not multi-person instance tracking
-
-Product copy should describe the actual behavior.
+- manually seeded food/scene templates are not arbitrary-object AI understanding
 
 ### 8. Cross-platform is a product requirement
 
-Web, iOS and Android are first-class targets. Shared product behavior matters more than forcing every implementation detail to be identical.
-
-During MVP development, a shared Expo/React Native implementation is preferred. Native adapters are acceptable when they materially improve camera latency, stability or device integration.
-
-The domain model and matching logic should remain portable even if the camera or ML runtime becomes platform-specific.
+Web, iOS and Android are first-class targets. Shared domain geometry and matching logic matter more than forcing identical camera internals.
 
 ### 9. Local-first image processing
 
-Reference and camera images should stay on-device whenever practical.
-
-Cloud/VLM processing may later be used for higher-level composition semantics, but it must be an explicit architectural/product decision rather than an accidental requirement of basic shooting.
+Reference and camera images should stay on-device whenever practical. Cloud/VLM analysis may later add high-level semantics, but basic camera guidance must not silently depend on a cloud service.
 
 ### 10. Fail soft
-
-If one ML subsystem fails, preserve whatever useful guide is still available.
 
 Examples:
 
 - segmentation works, pose fails -> Outline/Ghost still work
-- pose works, segmentation fails -> Skeleton can still work and an approximate outer envelope may be generated
+- pose works, segmentation fails -> Skeleton works; approximate envelope may back Outline/Ghost
 - face fails -> keep guide without look-direction cue
-- automatic extraction fails -> show editable fallback instead of blocking the camera
+- automatic extraction fails -> show editable fallback/template instead of blocking camera
 
-### 11. Validate the shooting UX before optimizing the model
+### 11. Template sourcing
 
-A more accurate model does not matter if the guide is visually noisy or awkward in a real camera view.
+We study public product pages, App Store / Google Play screenshots and documentation to understand useful template **patterns**.
 
-When prioritizing work, prefer:
+We may reproduce the functional geometry/pattern in our own vector format, but do not ship copied proprietary screenshots, traced commercial pose artwork or extracted app assets in this public repository.
 
-1. real-world shooting usability
-2. stability and latency
-3. composition guidance quality
-4. model sophistication
+Store:
+
+- source URL
+- template/category name or functional description
+- our own normalized geometry
+- default display mode
+
+## Template-library targets
+
+### Outline templates
+
+Prioritize simple step-in shapes:
+
+- standing / relaxed
+- leaning
+- seated
+- squat
+- over-the-shoulder
+- duo / couple
+- small groups
+
+### Skeleton templates
+
+Prioritize poses where exact limb placement matters:
+
+- power stance
+- hip pop
+- casual walk
+- arms crossed
+- hand-in-pocket / natural
+- look-away
+- wall lean
+- step forward
+- seated forward lean
+- arm on knee
+- look-back walk
+- couple interactions
+
+### Ghost templates
+
+Prioritize PoseGhost-style categories:
+
+- selfie essentials
+- female full-body / seated / walking / over-the-shoulder
+- male relaxed stances
+- couple hug / hand hold / twirl / back-to-back
+- wedding
+- friends & groups
+
+### Guide templates
+
+Use reCompose-style semantic categories:
+
+- Travel
+- Street
+- Food
+- Portrait
+- Selfie
+- Pets
+- Family
+- Landscape
+- Buildings
+- Basic composition
+
+The goal is not to preserve another app's artwork. The goal is to quickly bootstrap a useful vocabulary of proven shooting patterns.
 
 ## MVP scope
 
-### Portrait MVP
+### Portrait
 
-- one primary person
-- reference image -> shared contour + pose + face geometry
-- four switchable guide presets where applicable
+- one primary person from arbitrary uploaded reference
+- shared contour + pose + face geometry
+- switchable Outline / Skeleton / Ghost / Guide
 - editable target position / scale
-- camera guide
 - sampled alignment coaching
 
-### Food/object MVP
+### Food / object
 
-- one to three prominent objects
-- reCompose-like composition templates/zones
-- relative placement and size
-- other presets may be added only where they make semantic sense
+- reusable Guide templates for one-to-many objects
+- relative size / spacing / placement
+- arbitrary object extraction from a user photo is later
+
+### Scene
+
+- Guide templates using semantic lines / zones / points / frames
+- initial scope includes Travel / Street / Landscape / Buildings / Basic patterns
 
 ### Explicitly later
 
 - multi-person instance segmentation from arbitrary uploaded references
-- arbitrary object segmentation from uploaded food photos
+- arbitrary food/object segmentation
 - continuous high-FPS native frame processing
 - stable auto-capture
 - cloud/VLM semantic composition analysis
 - community/template marketplace
-- advanced per-layer mixing (e.g. Outline + composition eye line at the same time)
+- per-layer mixing beyond the four main modes
 
-## Success criteria for a feature
+## Success criteria
 
-A feature is valuable when it measurably helps a user get closer to the intended photo with less communication or trial-and-error.
-
-Before shipping, ask:
+Before shipping a feature, ask:
 
 1. Does it help during the shooting moment?
-2. Is the instruction visually simpler than the original reference?
+2. Is it simpler than memorizing the original reference?
 3. Can a non-photographer understand it quickly?
-4. Does it preserve the intended composition rather than merely matching pixels?
+4. Does it preserve composition rather than merely matching pixels?
 5. Does failure leave the camera usable?
 6. Does it work, or degrade clearly, on Web/iOS/Android?
 
-If the answer to several of these is no, the feature should be redesigned before merging.
+If several answers are no, redesign before merging.
