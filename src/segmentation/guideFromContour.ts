@@ -1,13 +1,43 @@
-import { GuideSpec, NormalizedPoint, PersonGuide } from '../types';
+import { GuideSpec, NormalizedPoint, PersonGuide, PoseJoints } from '../types';
+import { PoseLandmark } from '../pose/PoseDetector';
 
 export type PersonContourDetection = {
   contour: NormalizedPoint[];
   maskWidth: number;
   maskHeight: number;
   foregroundRatio: number;
+  /** Optional internal geometry from MediaPipe Pose Landmarker. Never rendered as a stick skeleton. */
+  poseLandmarks?: PoseLandmark[];
 };
 
 const clamp = (value: number, min = 0, max = 1) => Math.max(min, Math.min(max, value));
+const midpoint = (a: NormalizedPoint, b: NormalizedPoint): NormalizedPoint => ({
+  x: (a.x + b.x) / 2,
+  y: (a.y + b.y) / 2,
+});
+
+function inferFacing(byName: Map<string, PoseLandmark>): PersonGuide['head']['facing'] {
+  const nose = byName.get('nose');
+  const leftEar = byName.get('left_ear');
+  const rightEar = byName.get('right_ear');
+  const leftEye = byName.get('left_eye');
+  const rightEye = byName.get('right_eye');
+  if (!nose) return 'front';
+
+  const pair = leftEar && rightEar
+    ? [leftEar, rightEar]
+    : leftEye && rightEye
+      ? [leftEye, rightEye]
+      : null;
+
+  if (!pair) return 'front';
+  const centerX = (pair[0].x + pair[1].x) / 2;
+  const span = Math.max(0.02, Math.abs(pair[1].x - pair[0].x));
+  const threshold = Math.max(0.008, span * 0.10);
+  if (nose.x < centerX - threshold) return 'left';
+  if (nose.x > centerX + threshold) return 'right';
+  return 'front';
+}
 
 export function buildGuideFromContour(
   detection: PersonContourDetection,
@@ -28,52 +58,117 @@ export function buildGuideFromContour(
   const bodyHeight = Math.max(0.16, bottom - top);
   const centerX = (left + right) / 2;
 
+  const byName = new Map((detection.poseLandmarks ?? []).map((point) => [point.name, point]));
+  const visible = (name: string, minConfidence = 0.18) => {
+    const point = byName.get(name);
+    if (!point) return undefined;
+    if (point.confidence != null && point.confidence < minConfidence) return undefined;
+    return point;
+  };
+
+  const leftShoulder = visible('left_shoulder');
+  const rightShoulder = visible('right_shoulder');
+  const leftHip = visible('left_hip');
+  const rightHip = visible('right_hip');
+  const nose = visible('nose', 0.10);
+
   const headBandBottom = top + bodyHeight * 0.19;
   const headPoints = detection.contour.filter((point) => point.y <= headBandBottom);
   const headXs = headPoints.length >= 4 ? headPoints.map((point) => point.x) : xs;
   const headLeft = Math.min(...headXs);
   const headRight = Math.max(...headXs);
-  const headCenterX = clamp((headLeft + headRight) / 2);
-  const headCenterY = clamp(top + bodyHeight * 0.095);
-  const headRx = clamp(Math.max(0.035, (headRight - headLeft) * 0.52), 0.035, 0.15);
-  const headRy = clamp(Math.max(0.045, bodyHeight * 0.09), 0.045, 0.16);
 
-  const shoulderY = clamp(top + bodyHeight * 0.22);
-  const hipY = clamp(top + bodyHeight * 0.57);
+  const facePoints = [
+    visible('nose', 0.08),
+    visible('left_eye', 0.08),
+    visible('right_eye', 0.08),
+    visible('left_ear', 0.08),
+    visible('right_ear', 0.08),
+    visible('mouth_left', 0.08),
+    visible('mouth_right', 0.08),
+  ].filter(Boolean) as PoseLandmark[];
+
+  const faceCenterX = facePoints.length >= 2
+    ? facePoints.reduce((sum, point) => sum + point.x, 0) / facePoints.length
+    : (headLeft + headRight) / 2;
+
+  const shoulderMid = leftShoulder && rightShoulder
+    ? midpoint(leftShoulder, rightShoulder)
+    : { x: centerX, y: clamp(top + bodyHeight * 0.22) };
+
+  const hipMid = leftHip && rightHip
+    ? midpoint(leftHip, rightHip)
+    : { x: centerX, y: clamp(top + bodyHeight * 0.57) };
+
+  const poseShoulderWidth = leftShoulder && rightShoulder
+    ? Math.abs(rightShoulder.x - leftShoulder.x)
+    : 0;
+  const shoulderWidth = Math.max(bodyWidth * 0.52, poseShoulderWidth, 0.08);
+
+  const headCenterX = clamp(faceCenterX);
+  const headCenterY = clamp(top + bodyHeight * 0.095);
+  const headRxFromContour = Math.max(0.035, (headRight - headLeft) * 0.52);
+  const faceSpan = facePoints.length >= 2
+    ? Math.max(...facePoints.map((point) => point.x)) - Math.min(...facePoints.map((point) => point.x))
+    : 0;
+  const headRx = clamp(Math.max(headRxFromContour, faceSpan * 0.62, shoulderWidth * 0.19), 0.035, 0.15);
+  const headRy = clamp(Math.max(0.045, bodyHeight * 0.09, headRx * 1.22), 0.045, 0.17);
+
+  const joints: PoseJoints = {
+    leftElbow: visible('left_elbow'),
+    rightElbow: visible('right_elbow'),
+    leftWrist: visible('left_wrist'),
+    rightWrist: visible('right_wrist'),
+    leftHip,
+    rightHip,
+    leftKnee: visible('left_knee'),
+    rightKnee: visible('right_knee'),
+    leftAnkle: visible('left_ankle'),
+    rightAnkle: visible('right_ankle'),
+  };
+
+  const facing = inferFacing(byName);
 
   const person: PersonGuide = {
     contour: detection.contour,
     head: {
-      center: { x: headCenterX, y: headCenterY },
+      center: nose
+        ? { x: headCenterX, y: headCenterY }
+        : { x: clamp((headLeft + headRight) / 2), y: headCenterY },
       rx: headRx,
       ry: headRy,
-      facing: 'front',
+      facing,
     },
     shoulders: {
-      left: { x: clamp(centerX - bodyWidth * 0.34), y: shoulderY },
-      right: { x: clamp(centerX + bodyWidth * 0.34), y: shoulderY },
+      left: leftShoulder ?? { x: clamp(centerX - bodyWidth * 0.34), y: shoulderMid.y },
+      right: rightShoulder ?? { x: clamp(centerX + bodyWidth * 0.34), y: shoulderMid.y },
     },
     torso: {
-      top: { x: centerX, y: shoulderY },
-      bottom: { x: centerX, y: hipY },
-      width: bodyWidth * 0.58,
+      top: shoulderMid,
+      bottom: hipMid,
+      width: shoulderWidth,
     },
+    joints,
   };
 
-  const crop: GuideSpec['crop'] = bottom > 0.92
+  const hasAnkle = Boolean(joints.leftAnkle || joints.rightAnkle);
+  const hasKnee = Boolean(joints.leftKnee || joints.rightKnee);
+  const hasHip = Boolean(joints.leftHip || joints.rightHip);
+  const crop: GuideSpec['crop'] = hasAnkle || bottom > 0.92
     ? 'full'
-    : bottom > 0.78
+    : hasKnee || bottom > 0.78
       ? 'three-quarter'
-      : bottom > 0.58
+      : hasHip || bottom > 0.58
         ? 'half'
         : 'headshot';
 
   return {
     kind: 'portrait',
     mode: 'outline',
+    visualStyle: 'sovs',
     people: [person],
     crop,
-    lookSpace: 'center',
+    lookSpace: facing === 'left' ? 'left' : facing === 'right' ? 'right' : 'center',
     sourceUri,
     aspectRatio: aspectRatio > 0 ? aspectRatio : 0.75,
     transform: { dx: 0, dy: 0, scale: 1 },
