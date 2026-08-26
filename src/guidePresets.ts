@@ -1,10 +1,11 @@
-import { GuideKind, GuidePreset } from './types';
+import { BenchmarkPresetKey, DisplayMode, GuideKind } from './types';
 
-export type GuidePresetDefinition = {
-  key: GuidePreset;
-  /** Product-facing mode name: Outline / Skeleton / Ghost / Guide. */
+export type DisplayModeDefinition = {
+  /** Canonical product-facing mode key. */
+  key: DisplayMode;
+  /** Legacy benchmark-shaped key used by older template data. */
+  benchmarkKey: BenchmarkPresetKey;
   shortLabel: string;
-  /** Benchmark reference only; not the primary product name. */
   benchmarkLabel: string;
   /** Backward-compatible UI alias for benchmarkLabel. */
   label: string;
@@ -15,47 +16,76 @@ export type GuidePresetDefinition = {
 };
 
 const mode = (
-  key: GuidePreset,
+  key: DisplayMode,
+  benchmarkKey: BenchmarkPresetKey,
   shortLabel: string,
   benchmarkLabel: string,
   description: string,
   layers: string[],
   supportedKinds: GuideKind[],
   benchmarkUrl: string,
-): GuidePresetDefinition => ({
-  key, shortLabel, benchmarkLabel, label: benchmarkLabel, description, layers, supportedKinds, benchmarkUrl,
+): DisplayModeDefinition => ({
+  key,
+  benchmarkKey,
+  shortLabel,
+  benchmarkLabel,
+  label: benchmarkLabel,
+  description,
+  layers,
+  supportedKinds,
+  benchmarkUrl,
 });
 
-/**
- * The product has four display modes. Benchmark brands document the interaction
- * patterns we studied; they are not the primary user-facing taxonomy.
- */
-export const GUIDE_PRESETS: GuidePresetDefinition[] = [
+/** Product display modes. Benchmark brands are provenance, never primary taxonomy. */
+export const DISPLAY_MODES: DisplayModeDefinition[] = [
   mode(
-    'sovs', 'Outline', 'SOVS / SOVS2-like',
+    'outline', 'sovs', 'Outline', 'SOVS / SOVS2-like',
     'Clean outside contour. Put the real person inside the silhouette.',
     ['outer contour', 'optional face direction'], ['portrait'],
     'https://apppage.net/preview/me.sovs.sovs2',
   ),
   mode(
-    'poseoverlay', 'Skeleton', 'PoseOverlay-like',
+    'skeleton', 'poseoverlay', 'Skeleton', 'PoseOverlay-like',
     'Explicit body skeleton and joint anchors for precise pose matching.',
     ['skeleton', 'joint anchors', 'face direction'], ['portrait'],
     'https://poseoverlay.com/features/copy-this-pose',
   ),
   mode(
-    'poseghost', 'Ghost', 'PoseGhost-like',
+    'ghost', 'poseghost', 'Ghost', 'PoseGhost-like',
     'Semi-transparent filled silhouette that behaves like a pose stencil.',
     ['filled silhouette', 'outer contour'], ['portrait'],
     'https://play.google.com/store/apps/details?id=nz.dev.poseghost',
   ),
   mode(
-    'recompose', 'Guide', 'reCompose-like',
+    'guide', 'recompose', 'Guide', 'reCompose-like',
     'Semantic composition zones, lines, labels, look space and object relationships.',
     ['composition zones', 'lines / frames', 'labels', 'look space'], ['portrait', 'food', 'scene'],
     'https://recompose.camera/',
   ),
 ];
 
-export const getGuidePreset = (key: GuidePreset) =>
-  GUIDE_PRESETS.find((preset) => preset.key === key) ?? GUIDE_PRESETS[0];
+const LEGACY_TO_MODE: Record<BenchmarkPresetKey, DisplayMode> = {
+  sovs: 'outline',
+  poseoverlay: 'skeleton',
+  poseghost: 'ghost',
+  recompose: 'guide',
+};
+
+export const resolveDisplayMode = (value?: DisplayMode | BenchmarkPresetKey | null): DisplayMode => {
+  if (!value) return 'outline';
+  if (value === 'outline' || value === 'skeleton' || value === 'ghost' || value === 'guide') return value;
+  return LEGACY_TO_MODE[value];
+};
+
+export const legacyBenchmarkKeyForMode = (displayMode: DisplayMode): BenchmarkPresetKey =>
+  DISPLAY_MODES.find((modeDefinition) => modeDefinition.key === displayMode)?.benchmarkKey ?? 'sovs';
+
+export const getDisplayMode = (value?: DisplayMode | BenchmarkPresetKey | null) => {
+  const key = resolveDisplayMode(value);
+  return DISPLAY_MODES.find((modeDefinition) => modeDefinition.key === key) ?? DISPLAY_MODES[0];
+};
+
+/** @deprecated Use DISPLAY_MODES. */
+export const GUIDE_PRESETS = DISPLAY_MODES;
+/** @deprecated Use getDisplayMode. Accepts legacy keys for old template data. */
+export const getGuidePreset = getDisplayMode;
