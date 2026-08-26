@@ -6,7 +6,7 @@ context: |
   Core product taxonomy: Display Mode and Template are separate concepts.
   The only product-facing display modes are Outline, Skeleton, Ghost, and Guide.
   Benchmark brands (SOVS/SOVS2, PoseOverlay, PoseGhost, reCompose) are research metadata, not product taxonomy.
-  Reference images should stay local; remote model/runtime assets are allowed only when explicitly documented.
+  User-provided reference/camera image bytes should stay local; remote model/runtime assets are allowed only when explicitly documented.
   GitHub Actions hosted-runner billing/availability is not currently a merge gate.
   Non-trivial work uses branch -> OpenSpec plan -> implementation -> PR -> deliberate review -> squash merge.
 
