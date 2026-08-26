@@ -21,9 +21,9 @@ Then:
 2. Choose **Web / EAS Hosting**.
 3. Confirm or change the requested `*.expo.app` subdomain if it is already taken.
 4. Finish the deployment.
-5. Copy the resulting production URL back into this README / Usage Guide.
+5. Copy the resulting production URL back into README / Usage Guide.
 
-Expo Launch handles the initial EAS project configuration in the browser. The final production URL normally has the form:
+Expo Launch handles the initial project setup in the browser. The final production URL normally has the form:
 
 ```text
 https://<chosen-domain>.expo.app/
@@ -31,15 +31,7 @@ https://<chosen-domain>.expo.app/
 
 Do not document a production URL until the first deployment has actually completed.
 
-### CLI alternative
-
-After the project has been linked to an Expo account, Web can also be exported/deployed with:
-
-```bash
-npm run deploy:web
-```
-
-This runs the Web export first and then requests a production EAS Hosting deployment.
+For this POC, Expo Launch is the supported Web distribution path. The project does not currently use Expo Router, so a separate EAS Hosting CLI workflow should not be treated as verified until it is tested explicitly.
 
 ## Android: installable APK
 
@@ -77,7 +69,7 @@ On the first build, EAS may ask to connect/create the Expo project and generate 
 
 EAS provides a build page / install URL. On an Android phone you can open that URL, download the APK, and install it directly.
 
-You can also download the latest Android build artifact to a computer:
+You can also download an Android build artifact to a computer:
 
 ```bash
 npm run download:apk
@@ -107,12 +99,12 @@ Release notes should mention:
 
 ## Free-tier note
 
-As of August 2026, Expo's Free plan includes a limited monthly allocation of low-priority Android/iOS builds. Free-plan accounts do not incur overage charges after the quota is exhausted; additional builds wait until the monthly quota resets unless the account is upgraded.
+As of August 2026, Expo's Free plan includes up to **15 Android and 15 iOS builds per month** in the low-priority queue. Free-plan accounts do not incur overage charges after the quota is exhausted; additional builds wait until the monthly quota resets unless the account is upgraded.
 
 EAS Hosting is also available to Free-plan Expo accounts. Custom domains are a paid feature, so the free Web deployment should use the provided `*.expo.app` domain.
 
 ## What still requires a human sign-in
 
-The repository can be prepared for distribution automatically, but the first EAS action requires authentication to an Expo account. This is the one step that cannot be completed anonymously from the repository itself.
+The repository can be prepared for distribution automatically, but the first Expo Launch / EAS Build action requires authentication to an Expo account. This is the one step that cannot be completed anonymously from the repository itself.
 
-After that one-time linkage, future Web deployments and APK builds can reuse the same project and credentials.
+After that one-time linkage, future APK builds can reuse the same Expo project and Android signing credentials.
