@@ -12,8 +12,11 @@ export type PoseDetection = {
 };
 
 /**
- * Adapter boundary for a future MediaPipe / MoveNet / ML Kit implementation.
- * The product UI only consumes GuideSpec and does not depend on a particular ML runtime.
+ * Internal-only pose geometry adapter.
+ *
+ * Important product rule: pose landmarks may help estimate framing, facing or
+ * a fallback body envelope, but the photographer never sees a stick skeleton.
+ * Human guides are rendered as OUTER CONTOURS only.
  */
 export interface PoseDetector {
   detectReference(uri: string): Promise<PoseDetection>;
@@ -33,7 +36,7 @@ export class HeuristicGuideGenerator implements GuideGenerator {
     const rightHip = byName.get('right_hip');
 
     if (!leftShoulder || !rightShoulder || !nose) {
-      throw new Error('Reference pose does not contain enough landmarks to generate a guide.');
+      throw new Error('Reference pose does not contain enough landmarks to estimate a portrait outline.');
     }
 
     const shoulderMid = {
@@ -69,10 +72,13 @@ export class HeuristicGuideGenerator implements GuideGenerator {
 
     return {
       kind: 'portrait',
-      mode: 'simple',
+      mode: 'outline',
       people: [person],
       crop: joints.leftAnkle || joints.rightAnkle ? 'full' : hipMid.y > 0.82 ? 'half' : 'three-quarter',
       lookSpace: nose.x < shoulderMid.x - 0.015 ? 'left' : nose.x > shoulderMid.x + 0.015 ? 'right' : 'center',
+      aspectRatio: detection.sourceWidth > 0 && detection.sourceHeight > 0
+        ? detection.sourceWidth / detection.sourceHeight
+        : 0.75,
       transform: { dx: 0, dy: 0, scale: 1 },
     };
   }
