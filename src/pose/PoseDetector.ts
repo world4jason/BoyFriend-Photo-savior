@@ -12,11 +12,11 @@ export type PoseDetection = {
 };
 
 /**
- * Internal-only pose geometry adapter.
+ * Internal pose-geometry adapter.
  *
- * Important product rule: pose landmarks may help estimate framing, facing or
- * a fallback body envelope, but the photographer never sees a stick skeleton.
- * Human guides are rendered as OUTER CONTOURS only.
+ * Pose landmarks are shared domain geometry. Outline/Ghost/Guide normally hide
+ * them; the explicit Skeleton display mode may render a curated joint graph.
+ * Raw 33-point/debug landmark dumps remain implementation detail.
  */
 export interface PoseDetector {
   detectReference(uri: string): Promise<PoseDetection>;
@@ -36,7 +36,7 @@ export class HeuristicGuideGenerator implements GuideGenerator {
     const rightHip = byName.get('right_hip');
 
     if (!leftShoulder || !rightShoulder || !nose) {
-      throw new Error('Reference pose does not contain enough landmarks to estimate a portrait outline.');
+      throw new Error('Reference pose does not contain enough landmarks to estimate portrait geometry.');
     }
 
     const shoulderMid = {
@@ -73,6 +73,7 @@ export class HeuristicGuideGenerator implements GuideGenerator {
     return {
       kind: 'portrait',
       mode: 'outline',
+      displayMode: 'outline',
       people: [person],
       crop: joints.leftAnkle || joints.rightAnkle ? 'full' : hipMid.y > 0.82 ? 'half' : 'three-quarter',
       lookSpace: nose.x < shoulderMid.x - 0.015 ? 'left' : nose.x > shoulderMid.x + 0.015 ? 'right' : 'center',
