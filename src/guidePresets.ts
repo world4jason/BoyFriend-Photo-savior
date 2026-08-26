@@ -15,6 +15,11 @@ export type DisplayModeDefinition = {
   benchmarkUrl: string;
 };
 
+export type LegacyGuidePresetDefinition = Omit<DisplayModeDefinition, 'key'> & {
+  key: BenchmarkPresetKey;
+  displayMode: DisplayMode;
+};
+
 const mode = (
   key: DisplayMode,
   benchmarkKey: BenchmarkPresetKey,
@@ -85,7 +90,15 @@ export const getDisplayMode = (value?: DisplayMode | BenchmarkPresetKey | null) 
   return DISPLAY_MODES.find((modeDefinition) => modeDefinition.key === key) ?? DISPLAY_MODES[0];
 };
 
-/** @deprecated Use DISPLAY_MODES. */
-export const GUIDE_PRESETS = DISPLAY_MODES;
-/** @deprecated Use getDisplayMode. Accepts legacy keys for old template data. */
+/**
+ * Compatibility view for App/template code that still stores benchmark-shaped keys.
+ * New code should prefer DISPLAY_MODES + DisplayMode.
+ */
+export const GUIDE_PRESETS: LegacyGuidePresetDefinition[] = DISPLAY_MODES.map((modeDefinition) => ({
+  ...modeDefinition,
+  key: modeDefinition.benchmarkKey,
+  displayMode: modeDefinition.key,
+}));
+
+/** Accepts either canonical DisplayMode or a legacy benchmark key. */
 export const getGuidePreset = getDisplayMode;
