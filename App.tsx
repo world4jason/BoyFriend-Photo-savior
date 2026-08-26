@@ -343,7 +343,6 @@ export default function App() {
     invalidateLiveSession();
     cleanupRequestFiles(liveRequest);
     setLiveRequest(null);
-    resetLiveStability();
     setLiveError('');
     photoCaptureRef.current = true;
     try {
@@ -715,7 +714,7 @@ export default function App() {
 
   const liveHint = guide.kind === 'portrait'
     ? liveError
-      ? (liveError.startsWith('Auto capture') ? 'Capture failed' : 'Find the subject again')
+      ? (liveError.toLowerCase().includes('capture') ? 'Capture unavailable' : 'Find the subject again')
       : matchStability.stableMatched
         ? '✓ Stable match'
         : holdingForStable
