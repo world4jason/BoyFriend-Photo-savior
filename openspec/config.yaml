@@ -1,0 +1,34 @@
+schema: spec-driven
+
+context: |
+  Product: BoyFriend Photo Savior, a Web/iOS/Android reference-to-guide camera POC.
+  Stack: Expo SDK 57, React Native, TypeScript, MediaPipe Tasks Vision, react-native-svg.
+  Core product taxonomy: Display Mode and Template are separate concepts.
+  The only product-facing display modes are Outline, Skeleton, Ghost, and Guide.
+  Benchmark brands (SOVS/SOVS2, PoseOverlay, PoseGhost, reCompose) are research metadata, not product taxonomy.
+  User-provided reference/camera image bytes should stay local; remote model/runtime assets are allowed only when explicitly documented.
+  GitHub Actions hosted-runner billing/availability is not currently a merge gate.
+  Non-trivial work uses branch -> OpenSpec plan -> implementation -> PR -> deliberate review -> squash merge.
+
+rules:
+  proposal:
+    - State which existing capability specs are affected and keep benchmark/product terminology separate.
+    - Call out Web, iOS, and Android impact when camera, ML, storage, or rendering changes.
+  design:
+    - Preserve shared GuideSpec geometry; display modes must not become separate sources of truth.
+    - Keep camera/input adapters, analysis, domain geometry, rendering, and matching as separate layers.
+    - Document async lifecycle, cache cleanup, privacy/network behavior, and fallback paths.
+  tasks:
+    - Include typecheck and web-export validation when a runnable environment is available.
+    - Include physical-device smoke testing for changes that affect camera behavior.
+    - Do not mark validation complete when Actions billing or local network access prevented execution.
+
+operations:
+  apply:
+    guidance:
+      - Work on the feature branch, not directly on main.
+      - Resolve all P0/P1 review findings before completion.
+      - Keep README/docs synchronized only after behavior/spec decisions are settled.
+  archive:
+    guidance:
+      - Ensure current specs describe what actually shipped before archiving the change.

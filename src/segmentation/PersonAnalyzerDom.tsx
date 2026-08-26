@@ -110,7 +110,6 @@ function faceDirectionFromResult(result: any): FaceDirectionResult | null {
   const offset = (Number(nose.x) - centerX) / faceWidth;
   if (!Number.isFinite(offset)) return null;
 
-  // An intentionally conservative pseudo-yaw used only for UI guidance.
   const yawDegrees = Math.max(-45, Math.min(45, offset * 95));
   const direction: PersonGuide['head']['facing'] = offset < -0.075
     ? 'left'
@@ -172,50 +171,57 @@ async function createWithDelegate<T>(factory: (delegate: 'GPU' | 'CPU') => Promi
   }
 }
 
+async function createAnalyzer(): Promise<Analyzer> {
+  const vision = await FilesetResolver.forVisionTasks(WASM_URL);
+  const segmenter = await createWithDelegate((delegate) => ImageSegmenter.createFromOptions(vision, {
+    baseOptions: { modelAssetPath: SEGMENTER_MODEL_URL, delegate },
+    runningMode: 'IMAGE',
+    outputCategoryMask: true,
+    outputConfidenceMasks: false,
+  }));
+
+  let poseLandmarker: PoseLandmarker | null = null;
+  try {
+    poseLandmarker = await createWithDelegate((delegate) => PoseLandmarker.createFromOptions(vision, {
+      baseOptions: { modelAssetPath: POSE_MODEL_URL, delegate },
+      runningMode: 'IMAGE',
+      numPoses: 1,
+      minPoseDetectionConfidence: 0.35,
+      minPosePresenceConfidence: 0.25,
+      minTrackingConfidence: 0.25,
+      outputSegmentationMasks: false,
+    }));
+  } catch {
+    // Pose is an enhancement. The segmentation contour remains usable without it.
+  }
+
+  let faceLandmarker: FaceLandmarker | null = null;
+  try {
+    faceLandmarker = await createWithDelegate((delegate) => FaceLandmarker.createFromOptions(vision, {
+      baseOptions: { modelAssetPath: FACE_MODEL_URL, delegate },
+      runningMode: 'IMAGE',
+      numFaces: 1,
+      minFaceDetectionConfidence: 0.35,
+      minFacePresenceConfidence: 0.30,
+      minTrackingConfidence: 0.25,
+      outputFaceBlendshapes: false,
+      outputFacialTransformationMatrixes: false,
+    }));
+  } catch {
+    // Face direction falls back to coarse pose landmarks.
+  }
+
+  return { segmenter, poseLandmarker, faceLandmarker };
+}
+
 async function getAnalyzer(): Promise<Analyzer> {
   if (!analyzerPromise) {
-    analyzerPromise = (async () => {
-      const vision = await FilesetResolver.forVisionTasks(WASM_URL);
-      const segmenter = await createWithDelegate((delegate) => ImageSegmenter.createFromOptions(vision, {
-        baseOptions: { modelAssetPath: SEGMENTER_MODEL_URL, delegate },
-        runningMode: 'IMAGE',
-        outputCategoryMask: true,
-        outputConfidenceMasks: false,
-      }));
-
-      let poseLandmarker: PoseLandmarker | null = null;
-      try {
-        poseLandmarker = await createWithDelegate((delegate) => PoseLandmarker.createFromOptions(vision, {
-          baseOptions: { modelAssetPath: POSE_MODEL_URL, delegate },
-          runningMode: 'IMAGE',
-          numPoses: 1,
-          minPoseDetectionConfidence: 0.35,
-          minPosePresenceConfidence: 0.25,
-          minTrackingConfidence: 0.25,
-          outputSegmentationMasks: false,
-        }));
-      } catch {
-        // Pose is an enhancement. The segmentation contour remains usable without it.
-      }
-
-      let faceLandmarker: FaceLandmarker | null = null;
-      try {
-        faceLandmarker = await createWithDelegate((delegate) => FaceLandmarker.createFromOptions(vision, {
-          baseOptions: { modelAssetPath: FACE_MODEL_URL, delegate },
-          runningMode: 'IMAGE',
-          numFaces: 1,
-          minFaceDetectionConfidence: 0.35,
-          minFacePresenceConfidence: 0.30,
-          minTrackingConfidence: 0.25,
-          outputFaceBlendshapes: false,
-          outputFacialTransformationMatrixes: false,
-        }));
-      } catch {
-        // Face direction falls back to coarse pose landmarks.
-      }
-
-      return { segmenter, poseLandmarker, faceLandmarker };
-    })();
+    analyzerPromise = createAnalyzer().catch((error) => {
+      // A transient CDN/model initialization failure must not poison every
+      // later analysis request for the lifetime of this page/app session.
+      analyzerPromise = null;
+      throw error;
+    });
   }
   return analyzerPromise;
 }
@@ -258,12 +264,15 @@ async function analyze(dataUrl: string): Promise<PersonContourDetection> {
   return new Promise<PersonContourDetection>((resolve, reject) => {
     try {
       segmenter.segment(image, (result) => {
+        const categoryMask = result.categoryMask;
+        if (!categoryMask) {
+          reject(new Error('MediaPipe did not return a person mask.'));
+          return;
+        }
+
         try {
-          const categoryMask = result.categoryMask;
-          if (!categoryMask) throw new Error('MediaPipe did not return a person mask.');
           const data = categoryMask.getAsUint8Array();
           const detection = maskToOuterContour(data, categoryMask.width, categoryMask.height);
-          categoryMask.close?.();
           resolve({
             ...detection,
             poseLandmarks,
@@ -272,6 +281,8 @@ async function analyze(dataUrl: string): Promise<PersonContourDetection> {
           });
         } catch (error) {
           reject(error);
+        } finally {
+          categoryMask.close?.();
         }
       });
     } catch (error) {

@@ -1,13 +1,18 @@
 export type GuideMode = 'simple' | 'outline';
 export type GuideKind = 'portrait' | 'food' | 'scene';
 
+/** Product-facing display-mode identifiers. */
+export type DisplayMode = 'outline' | 'skeleton' | 'ghost' | 'guide';
+
 /**
- * Four photographer-facing display modes.
- * Product/UI names are Outline / Skeleton / Ghost / Guide.
- * Benchmark product names are research references only.
+ * Legacy benchmark-shaped renderer keys used by older template/sample data.
+ * New product/domain state should use DisplayMode instead.
  */
-export type GuidePreset = 'sovs' | 'poseoverlay' | 'poseghost' | 'recompose';
-export type GuideVisualStyle = GuidePreset;
+export type BenchmarkPresetKey = 'sovs' | 'poseoverlay' | 'poseghost' | 'recompose';
+/** @deprecated Use DisplayMode for product state; this alias remains for old template data. */
+export type GuidePreset = BenchmarkPresetKey;
+/** @deprecated Compatibility alias for legacy sample/template visualStyle fields. */
+export type GuideVisualStyle = BenchmarkPresetKey;
 
 export type NormalizedPoint = { x: number; y: number };
 
@@ -98,8 +103,10 @@ export type GuideSpec = {
   kind: GuideKind;
   /** Legacy object sub-style; not one of the four product display modes. */
   mode: GuideMode;
-  /** Photographer-facing display mode. */
-  visualStyle?: GuidePreset;
+  /** Canonical product-facing display mode. */
+  displayMode?: DisplayMode;
+  /** @deprecated Legacy benchmark-shaped renderer key for old template/sample data. */
+  visualStyle?: BenchmarkPresetKey;
   people: PersonGuide[];
   objects?: ObjectGuide[];
   annotations?: GuideAnnotation[];
@@ -128,7 +135,7 @@ export const DEFAULT_PERSON: PersonGuide = {
 export const DEFAULT_GUIDE: GuideSpec = {
   kind: 'portrait',
   mode: 'outline',
-  visualStyle: 'sovs',
+  displayMode: 'outline',
   people: [DEFAULT_PERSON],
   crop: 'half',
   lookSpace: 'left',

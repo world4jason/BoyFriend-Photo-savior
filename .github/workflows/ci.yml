@@ -15,5 +15,6 @@ jobs:
         with:
           node-version: 22.13.1
       - run: npm install --no-audit --no-fund
+      - run: npm run spec:validate
       - run: npm run typecheck
       - run: npm run export:web

@@ -6,7 +6,7 @@ export type PersonContourDetection = {
   maskWidth: number;
   maskHeight: number;
   foregroundRatio: number;
-  /** Optional internal geometry from MediaPipe Pose Landmarker. Never rendered as a stick skeleton. */
+  /** Optional shared pose geometry from MediaPipe Pose Landmarker. */
   poseLandmarks?: PoseLandmark[];
   /** Optional higher-precision face direction from MediaPipe Face Landmarker. */
   faceDirection?: PersonGuide['head']['facing'];
@@ -169,6 +169,8 @@ export function buildGuideFromContour(
   return {
     kind: 'portrait',
     mode: 'outline',
+    displayMode: 'outline',
+    // Keep legacy compatibility until all existing template/sample data migrate.
     visualStyle: 'sovs',
     people: [person],
     crop,
