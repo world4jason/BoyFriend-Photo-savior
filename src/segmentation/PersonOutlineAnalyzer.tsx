@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import PersonAnalyzerDom, {
   AnalyzerErrorPayload,
   AnalyzerResultPayload,
@@ -30,18 +30,27 @@ type Props = {
  *
  * This keeps the ML implementation identical on all three targets and avoids
  * separate Swift/Kotlin bridges during MVP development.
+ *
+ * The DOM analysis itself can outlive a React render. Keep the latest outer
+ * callbacks in refs so a result never applies stale UI state (for example an
+ * Auto Capture value from before the photographer toggled it off).
  */
 export function PersonOutlineAnalyzer({ request, onResult, onError }: Props) {
+  const onResultRef = useRef(onResult);
+  const onErrorRef = useRef(onError);
+  onResultRef.current = onResult;
+  onErrorRef.current = onError;
+
   if (!request) return null;
 
   const handleResult = async (payload: AnalyzerResultPayload) => {
     if (payload.requestId !== request.id) return;
-    await onResult(request, payload.detection);
+    await onResultRef.current(request, payload.detection);
   };
 
   const handleError = async (payload: AnalyzerErrorPayload) => {
     if (payload.requestId !== request.id) return;
-    await onError(request, payload.message || 'Outline analysis failed.');
+    await onErrorRef.current(request, payload.message || 'Outline analysis failed.');
   };
 
   return (
