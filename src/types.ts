@@ -1,4 +1,4 @@
-export type GuideMode = 'simple' | 'outline' | 'pose';
+export type GuideMode = 'simple' | 'outline';
 export type GuideKind = 'portrait' | 'food';
 
 export type NormalizedPoint = { x: number; y: number };
@@ -9,6 +9,10 @@ export type GuideTransform = {
   scale: number;
 };
 
+/**
+ * Pose joints are internal geometry only. They may be used to derive a fallback
+ * contour for presets, but they are never rendered as a skeleton to the user.
+ */
 export type PoseJoints = {
   leftElbow?: NormalizedPoint;
   rightElbow?: NormalizedPoint;
@@ -23,6 +27,11 @@ export type PoseJoints = {
 };
 
 export type PersonGuide = {
+  /**
+   * Closed outer contour in source-image normalized coordinates.
+   * Segmentation-based references should populate this field.
+   */
+  contour?: NormalizedPoint[];
   head: {
     center: NormalizedPoint;
     rx: number;
@@ -57,6 +66,8 @@ export type GuideSpec = {
   crop: 'headshot' | 'half' | 'three-quarter' | 'full' | 'tabletop';
   lookSpace: 'left' | 'right' | 'center';
   sourceUri?: string;
+  /** Source image width / height. Used to keep the guide undistorted in camera. */
+  aspectRatio?: number;
   transform: GuideTransform;
 };
 
@@ -76,9 +87,10 @@ export const DEFAULT_PERSON: PersonGuide = {
 
 export const DEFAULT_GUIDE: GuideSpec = {
   kind: 'portrait',
-  mode: 'simple',
+  mode: 'outline',
   people: [DEFAULT_PERSON],
   crop: 'half',
   lookSpace: 'left',
+  aspectRatio: 0.75,
   transform: { dx: 0, dy: 0, scale: 1 },
 };
