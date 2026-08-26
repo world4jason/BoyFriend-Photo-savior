@@ -1,49 +1,133 @@
 # Development Workflow
 
-The repository uses a **branch -> pull request -> self-review -> merge** workflow for non-trivial changes.
+The repository uses **OpenSpec + branch + PR + deliberate review** for non-trivial behavior changes.
 
-GitHub Actions is useful when available, but hosted-runner billing/availability is currently **not a merge gate**. A failed workflow with no executed steps is treated as infrastructure noise, not as an application test failure.
+GitHub Actions is useful when available, but hosted-runner billing/availability is currently **not a merge gate**. A failed workflow with no executed steps is infrastructure noise, not an application test failure.
+
+## Source-of-truth hierarchy
+
+Use the right document for the right question:
+
+```text
+openspec/specs/       observable current behavior / capability contracts
+docs/ARCHITECTURE.md  dependency boundaries and implementation shape
+docs/PRODUCT.md       product doctrine and UX intent
+docs/BENCHMARKS.md    benchmark research/provenance
+openspec/changes/     proposed behavior changes and their implementation plan
+```
+
+Do not use README or old PR descriptions as the authoritative behavior contract when an OpenSpec capability covers the same topic.
+
+## Normal workflow
+
+For a non-trivial feature or behavior change:
+
+```text
+branch
+  -> inspect current OpenSpec capabilities
+  -> OpenSpec proposal + delta specs + design + tasks
+  -> review/adjust the plan
+  -> implementation
+  -> PR
+  -> complete-diff review
+  -> resolve P0/P1 findings
+  -> verify specs still match implementation
+  -> squash merge
+  -> archive/sync the OpenSpec change
+```
+
+OpenSpec's default spec-driven workflow is `proposal -> specs -> design -> tasks -> apply -> archive`.
+
+### Initial brownfield baseline
+
+`openspec/specs/` was initially backfilled from the already-working MVP during the architecture audit. That bootstrap is current truth, not fabricated historical change data. Future behavior changes should use `openspec/changes/<change-name>/`.
+
+## When an OpenSpec change is required
+
+Create/update an OpenSpec change before implementation when work changes observable behavior or an important cross-layer contract, for example:
+
+- adding/removing/changing a Display Mode
+- changing Template semantics or supported target kinds
+- changing reference-analysis output/fallback behavior
+- changing matching thresholds, weighting, status semantics, or coaching priority
+- changing privacy/network behavior
+- replacing sampled camera analysis with a frame processor
+- adding arbitrary multi-person/object analysis
+- changing cross-platform behavior or persisted data formats
+
+A pure code cleanup may skip delta specs when behavior intentionally stays identical, but the PR must say so and still respect current specs.
+
+## OpenSpec quick start
+
+OpenSpec currently requires Node.js 20.19+; this project already targets Node 22.13+.
+
+```bash
+npm install -g @fission-ai/openspec@latest
+openspec list --specs
+openspec validate --specs
+openspec new change <change-name>
+```
+
+For the default spec-driven workflow, a change should normally contain:
+
+```text
+openspec/changes/<change-name>/
+├── proposal.md
+├── specs/<affected-capability>/spec.md
+├── design.md
+└── tasks.md
+```
+
+Delta specs describe only what changes; archiving folds them into `openspec/specs/`.
 
 ## Branch policy
 
-Do not develop non-trivial features directly on `main`.
+Do not develop non-trivial work directly on `main`.
 
 Use a focused branch, for example:
 
 ```text
-feat/live-contour-matching
+feat/live-frame-processing
 fix/reference-analysis-memory
-chore/product-doctrine
+chore/openspec-architecture-audit
 ```
 
 A direct `main` edit should be limited to a trivial emergency correction when explicitly justified.
 
 ## Pull request policy
 
-Keep PRs small and single-purpose. GitHub recommends focused PRs because they are easier to understand and review.
+Keep PRs focused enough to review as one decision. Every PR should state:
 
-Every PR should state:
-
-- problem / user need
-- approach
-- important implementation choices
-- known limitations
-- manual validation performed
-- files or areas that deserve extra review attention
+- user/product problem or technical risk
+- affected OpenSpec capabilities/change folder, or why behavior specs are unchanged
+- approach and important implementation choices
+- known limitations/residual risk
+- actual validation performed
+- files/areas deserving extra review attention
 
 ## Required self-review
 
-Before merging, perform a deliberate review of the PR diff. GitHub does not allow a pull request author to formally approve their own PR, so when the same GitHub identity authored the branch, record the review as a PR **COMMENT** and checklist rather than an `APPROVE` event.
+Before merging, review the **complete PR diff**, not only the latest commit. GitHub does not allow a PR author to formally approve their own PR, so same-identity self-review is recorded as a PR **COMMENT** with findings and residual risk.
 
-A self-review is still a real review. Do not merge immediately after writing the code.
+Do not merge immediately after writing the code.
 
 ### Review checklist
 
-#### Product
+#### Spec / product
 
-- Does the change follow `docs/PRODUCT.md`?
-- Does it simplify the shooting moment rather than add visual noise?
-- Is capability labeling accurate (`sampled`, `approximate`, etc.)?
+- Does implementation satisfy the affected `openspec/specs/` requirements and scenarios?
+- If behavior changed, is there an appropriate OpenSpec change/delta?
+- Are Mode and Template still separate concepts?
+- Are product-facing mode names still Outline / Skeleton / Ghost / Guide?
+- Does the camera remain glanceable and give one primary action at a time?
+- Is capability labeling accurate (`sampled`, `approximate`, POC, etc.)?
+
+#### Architecture
+
+- Is shared `GuideSpec` geometry still the single target truth?
+- Does Display Mode affect rendering rather than create separate target geometry?
+- Are camera/input, analysis, domain, rendering, and matching boundaries preserved?
+- Is benchmark provenance kept out of primary product taxonomy/domain state?
 
 #### Correctness
 
@@ -51,6 +135,7 @@ A self-review is still a real review. Do not merge immediately after writing the
 - Can stale analysis results overwrite a newer request?
 - Are missing detections and partial ML failures handled?
 - Are coordinate systems/aspect ratios consistent?
+- Are resource lifetimes deterministic enough (masks/cache/temp files)?
 
 #### Mobile/runtime safety
 
@@ -66,20 +151,14 @@ A self-review is still a real review. Do not merge immediately after writing the
 - Android behavior considered?
 - Is a platform-specific assumption documented or guarded?
 
-#### Privacy
+#### Privacy/network
 
-- Does image data stay local unless the feature explicitly requires cloud processing?
-- Are new external network dependencies documented?
-
-#### UX
-
-- Is the primary camera instruction one action at a time?
-- Is there a usable fallback when analysis fails?
-- Is the guide still understandable without debug scores?
+- Do image bytes stay local unless a feature explicitly requires cloud processing?
+- Are new external runtime/model/network dependencies documented?
 
 #### Validation
 
-When Actions is unavailable, record what was actually verified. Do not claim tests passed if they were not executed.
+When Actions is unavailable, record what was actually verified. Never claim tests/builds passed when they did not run.
 
 Preferred checks when a local runtime is available:
 
@@ -87,52 +166,45 @@ Preferred checks when a local runtime is available:
 npm install
 npm run typecheck
 npm run export:web
+openspec validate --specs
 ```
 
-Camera behavior should also be checked on a physical iOS or Android device before calling a camera feature stable.
+Camera behavior should also be checked on a physical iOS or Android device before calling camera changes stable.
 
 ## Severity
 
-Use these review severities:
-
 - **P0** — data/security/privacy issue, severe crash, destructive behavior. Never merge.
-- **P1** — core flow broken, memory/storage leak, major race, wrong user guidance. Fix before merge.
-- **P2** — degraded edge case, maintainability risk, confusing UX. Prefer fix before merge; otherwise track explicitly.
+- **P1** — core flow broken, resource leak, major race, wrong user guidance, contradictory product/domain contract. Fix before merge.
+- **P2** — degraded edge case, maintainability/performance risk, confusing UX. Prefer fix; otherwise track explicitly.
 - **P3** — polish, naming, non-blocking cleanup.
 
 No PR merges with unresolved P0/P1 findings.
 
 ## Merge strategy
 
-Prefer **squash merge** for focused feature/fix PRs so `main` stays readable.
+Prefer **squash merge** for focused feature/fix PRs.
 
 Before merging:
 
-1. Review the complete diff, not just the latest commit.
+1. Review the complete diff.
 2. Confirm all P0/P1 findings are resolved.
-3. Confirm the PR still matches the product doctrine.
-4. Add a self-review comment summarizing findings and residual risk.
+3. Confirm current specs/product doctrine and implementation agree.
+4. Add a self-review comment summarizing findings, validation, and residual risks.
 5. Merge only then.
+6. For a completed behavior change, archive/sync its OpenSpec change so `openspec/specs/` remains current truth.
 
 ## Architecture guardrails
 
-Keep these boundaries intact where possible:
+See [`ARCHITECTURE.md`](ARCHITECTURE.md) for the detailed map. The essential dependency direction is:
 
 ```text
-Camera / input adapters
-        |
-        v
-Analysis adapters (MediaPipe / future native or VLM)
-        |
-        v
-GuideSpec domain model
-        |
-        +--> Guide renderer
-        |
-        +--> Match engine
-        |
-        v
-Camera coaching UI
+camera/input -> analysis -> domain <- templates
+                         |
+                         +-> rendering
+                         +-> matching
+                               |
+                               v
+                              UI
 ```
 
-Do not bury matching rules inside camera components. Do not make the Guide renderer depend directly on MediaPipe types. This allows the current sampled Expo camera implementation to be replaced later without rewriting product logic.
+Do not bury matching rules inside camera components. Do not make the renderer depend directly on MediaPipe types. This allows the current sampled Expo camera adapter to be replaced later without rewriting product semantics.
