@@ -288,7 +288,6 @@ export default function App() {
     setLiveRequest(null);
     resetLiveStability();
     liveBusyRef.current = false;
-    photoCaptureRef.current = false;
     setScreen('reference');
   };
 
@@ -692,11 +691,9 @@ export default function App() {
     ? liveError
       ? liveError
       : matchStability.stableMatched
-        ? captureSource === 'auto'
-          ? 'Auto captured once for this stable period. Move or reframe before another automatic shot can trigger.'
-          : autoCaptureEnabled
-            ? 'Stable match. Auto Capture fires once per stable period.'
-            : 'Composition stayed matched across samples. Ready to shoot.'
+        ? autoCaptureEnabled
+          ? 'Stable match. Auto Capture fires once when each stable period begins.'
+          : 'Composition stayed matched across samples. Ready to shoot.'
         : holdingForStable
           ? `Keep the pose steady for ${stabilityProgress.required - stabilityProgress.current} more matched sample.`
           : (liveFeedback?.detail ?? 'Sampled matching updates about every 1–2 seconds.')
