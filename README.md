@@ -6,7 +6,7 @@ The core product rule is:
 
 > **If the reference contains a person, the shooting guide is an outside contour — never a pose skeleton.**
 
-MediaPipe Pose Landmarker is used only as hidden geometry to improve head, shoulder, hand, hip, knee, ankle and face-direction estimates.
+MediaPipe Pose Landmarker and Face Landmarker are hidden geometry only. They improve head, shoulder, hand, hip, knee, ankle, crop and face-direction guidance without exposing landmark dots or stick figures to the photographer.
 
 ## What works now
 
@@ -14,11 +14,13 @@ MediaPipe Pose Landmarker is used only as hidden geometry to improve head, shoul
 - Import your own reference image
 - Automatic one-person segmentation with MediaPipe Image Segmenter
 - Automatic 33-point pose analysis with MediaPipe Pose Landmarker
+- Dedicated face analysis with MediaPipe Face Landmarker
 - Segmentation mask → simplified closed outer contour
 - Pose landmarks → hidden geometry that improves framing metadata and fallback anchors
-- Automatic rough face/look direction from pose face landmarks
+- Face landmarks → left / right / front look-direction cue
 - Reference / Guide-only preview
 - Portrait guides render only as human outer contours
+- SOVS-style guide keeps the silhouette clean and adds only a subtle face-direction cue when useful
 - Built-in portrait presets use outline-only fallback geometry
 - Food references use object zones / object outlines
 - Move / scale / reset the guide
@@ -32,26 +34,27 @@ MediaPipe Pose Landmarker is used only as hidden geometry to improve head, shoul
 ```text
 User photo
    |
-   +----------------------+
-   |                      |
-   v                      v
-MediaPipe              MediaPipe
-Image Segmenter        Pose Landmarker
-   |                      |
-   v                      v
-person mask            hidden landmarks
-   |                      |
-   v                      |
-outer contour <-----------+
-   |
-   v
-GuideSpec.people[0]
-   |
-   v
-SOVS-like live camera overlay
+   +----------------------+----------------------+
+   |                      |                      |
+   v                      v                      v
+MediaPipe              MediaPipe              MediaPipe
+Image Segmenter        Pose Landmarker        Face Landmarker
+   |                      |                      |
+   v                      v                      v
+person mask            body anchors           face direction
+   |                      |                      |
+   +----------------------+----------------------+
+                          |
+                          v
+               abstract portrait guide
+                  outer contour +
+              subtle look-direction cue
+                          |
+                          v
+                   live camera
 ```
 
-The photographer sees the **outside line**, not the skeleton.
+The photographer sees the **outside line**, not the skeleton or face mesh.
 
 The current automatic extractor targets **one primary person**. Multi-person instance separation is a later milestone.
 
@@ -114,8 +117,11 @@ person.contour exists
 person.contour missing
     -> derive an outer body envelope from hidden pose geometry
 
+face direction exists
+    -> optionally draw one small directional cue near the head
+
 never
-    -> render center-line stick skeletons to the photographer
+    -> render center-line stick skeletons or face mesh points
 ```
 
 ## Built-in demo photos
