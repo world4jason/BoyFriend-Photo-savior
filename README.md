@@ -1,6 +1,6 @@
 # BoyFriend Photo Savior
 
-A **reference → abstract human guide → live camera** MVP for Web, iOS and Android.
+A **reference → abstract human guide → live camera coach** MVP for Web, iOS and Android.
 
 The core product rule is:
 
@@ -20,19 +20,24 @@ MediaPipe Pose Landmarker and Face Landmarker are hidden geometry only. They imp
 - Face landmarks → left / right / front look-direction cue
 - Reference / Guide-only preview
 - Portrait guides render only as human outer contours
-- SOVS-style guide keeps the silhouette clean and adds only a subtle face-direction cue when useful
-- Built-in portrait presets use outline-only fallback geometry
+- SOVS-style step-in guide
+- Built-in portrait presets and rendering-style benchmarks
 - Food references use object zones / object outlines
-- Move / scale / reset the guide
-- Source aspect ratio is preserved so the guide is not stretched on a phone screen
+- Move / scale / reset the target guide
+- Source aspect ratio is preserved so the guide is not stretched
 - Live camera overlay
+- **Sampled Live Coach** for portraits
+  - subject position score
+  - subject size score
+  - relative pose score when enough landmarks exist
+  - face-direction score when the reference is turned left/right
+  - one prioritized coaching hint at a time
 - Camera capture with captured thumbnail
-- Built-in demo reference gallery and four rendering-style benchmarks
 
-## Automatic portrait flow
+## Automatic reference flow
 
 ```text
-User photo
+Reference photo
    |
    +----------------------+----------------------+
    |                      |                      |
@@ -56,18 +61,68 @@ person mask            body anchors           face direction
 
 The photographer sees the **outside line**, not the skeleton or face mesh.
 
-The current automatic extractor targets **one primary person**. Multi-person instance separation is a later milestone.
+## Sampled Live Coach
+
+Expo Camera currently exposes still-photo and recording APIs rather than a general per-frame processor. For the MVP, the camera silently samples a low-quality analysis image roughly every 1.7 seconds and sends it through the same local MediaPipe analyzer.
+
+```text
+Target Guide                 Sampled Camera Frame
+     |                                |
+     |                                v
+     |                       silhouette + pose + face
+     |                                |
+     +---------------+----------------+
+                     |
+                     v
+                Match Engine
+                     |
+          +----------+----------+
+          |          |          |
+       position     size       pose/face
+          |          |          |
+          +----------+----------+
+                     |
+                     v
+                 0–100 score
+                     +
+               one useful hint
+```
+
+Examples of coaching output:
+
+- `Subject → left`
+- `Subject ↑`
+- `Move closer`
+- `Step back`
+- `Face → right`
+- `Raise left wrist`
+- `✓ Match`
+
+The score is deliberately composition-oriented rather than a strict exercise/fitness pose score. Position and framing matter more than exact joint equality.
+
+### Why it is sampled instead of 30 FPS
+
+This version uses Expo Camera for the broadest Web/iOS/Android MVP. MediaPipe itself supports video/live-stream tracking, but true high-FPS coaching needs direct camera-frame access. The planned production path is to replace only the camera-analysis adapter with a native/frame-processor implementation while keeping `src/matching/guideMatch.ts` and the GuideSpec model.
 
 ## One analyzer across Web / iOS / Android
 
 The MediaPipe implementation lives in `src/segmentation/PersonAnalyzerDom.tsx` as an Expo **DOM Component**.
 
-- **Web:** it executes as normal browser DOM.
-- **iOS / Android:** Expo SDK 57 automatically hosts the same DOM component in its built-in `@expo/dom-webview` bridge.
+- **Web:** executes as normal browser DOM.
+- **iOS / Android:** Expo SDK 57 hosts the same DOM component in its built-in `@expo/dom-webview` bridge.
 
-This keeps one MediaPipe implementation instead of maintaining JavaScript + Swift + Kotlin versions during MVP development.
+The selected image/frame stays local to the app/browser. The MVP fetches MediaPipe WASM and model files from public hosting URLs, so first use requires network access. A packaged production build should bundle those assets or move inference to native MediaPipe Tasks.
 
-The selected photo stays local to the app/browser. The current MVP fetches the MediaPipe WASM runtime and model files from their public hosting URLs, so first use requires network access. A packaged production build should bundle those assets or move inference to native MediaPipe Tasks.
+## Matching engine
+
+`src/matching/guideMatch.ts` compares the target and current portrait using four signals:
+
+1. **Framing** — subject center vs target center.
+2. **Scale** — subject height vs target height.
+3. **Pose** — relative joint geometry after normalizing away position/scale.
+4. **Face** — left/right/front direction when the reference has a meaningful turn.
+
+The engine returns a `MatchFeedback` object with an overall score, component scores, status and coaching hint.
 
 ## Run
 
@@ -108,32 +163,21 @@ npm run export:web
 
 on every push / pull request. If the GitHub account cannot allocate a hosted Actions runner, the workflow can fail before any step starts; that is an account/runner issue rather than an application test result.
 
-## Data model
+## Current limits
 
-```text
-person.contour exists
-    -> draw the closed segmentation contour
-
-person.contour missing
-    -> derive an outer body envelope from hidden pose geometry
-
-face direction exists
-    -> optionally draw one small directional cue near the head
-
-never
-    -> render center-line stick skeletons or face mesh points
-```
-
-## Built-in demo photos
-
-The demo gallery uses Unsplash references and includes photographer credit in the UI. They are reference material for validating the shooting interaction. Replace them with local licensed assets for an offline packaged demo.
+- Automatic portrait extraction targets one primary person.
+- Live Coach is sampled rather than continuous video-frame inference.
+- Repeated sampled frames use temporary camera-cache images on native platforms.
+- Food guides are template/reference-zone based; arbitrary uploaded food segmentation is not implemented yet.
+- First MediaPipe model/runtime load currently needs network access.
 
 ## Next milestones
 
-1. Better contour tracing/smoothing around separated arms and legs.
-2. Multi-person instance segmentation and relationship guides.
-3. Live subject segmentation → overlap/alignment score against the target contour.
-4. Auto-capture when contour overlap is close enough.
-5. Arbitrary food/object segmentation from uploaded references.
-6. Bundle MediaPipe models/runtime for offline use.
-7. Save/share captured photos.
+1. Replace sampled captures with true live frame processing (15–30 FPS target).
+2. Add temporal smoothing so instructions do not flicker between adjacent frames.
+3. Require a stable match across multiple frames before offering auto-capture.
+4. Better contour tracing around separated arms, legs and props.
+5. Multi-person instance segmentation and relationship guides.
+6. Arbitrary food/object segmentation from uploaded references.
+7. Bundle MediaPipe models/runtime for offline use.
+8. Save/share captured photos.
