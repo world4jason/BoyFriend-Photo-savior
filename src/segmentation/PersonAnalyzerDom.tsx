@@ -1,7 +1,6 @@
 'use dom';
 
 import { useEffect } from 'react';
-import { FaceLandmarker, FilesetResolver, ImageSegmenter, PoseLandmarker } from '@mediapipe/tasks-vision';
 import type { PoseLandmark } from '../pose/PoseDetector';
 import type { NormalizedPoint, PersonGuide } from '../types';
 import type { PersonContourDetection } from './guideFromContour';
@@ -9,7 +8,14 @@ import type { PersonContourDetection } from './guideFromContour';
 const SEGMENTER_MODEL_URL = 'https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmenter/float16/latest/selfie_segmenter.tflite';
 const POSE_MODEL_URL = 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task';
 const FACE_MODEL_URL = 'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task';
-const WASM_URL = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.1/wasm';
+const MEDIAPIPE_VERSION = '1.0.1';
+const VISION_MODULE_URL = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MEDIAPIPE_VERSION}/vision_bundle.mjs`;
+const WASM_URL = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MEDIAPIPE_VERSION}/wasm`;
+const VISION_GLOBAL_KEY = '__bfpsMediaPipeVision';
+const VISION_ERROR_KEY = '__bfpsMediaPipeVisionError';
+const VISION_READY_EVENT = 'bfps-mediapipe-vision-ready';
+const VISION_ERROR_EVENT = 'bfps-mediapipe-vision-error';
+const VISION_LOADER_ID = 'bfps-mediapipe-vision-loader';
 
 const POSE_NAMES = [
   'nose',
@@ -48,10 +54,25 @@ type Props = {
   dom?: import('expo/dom').DOMProps;
 };
 
+type VisionModule = {
+  FilesetResolver: {
+    forVisionTasks: (wasmPath: string) => Promise<any>;
+  };
+  ImageSegmenter: {
+    createFromOptions: (vision: any, options: any) => Promise<any>;
+  };
+  PoseLandmarker: {
+    createFromOptions: (vision: any, options: any) => Promise<any>;
+  };
+  FaceLandmarker: {
+    createFromOptions: (vision: any, options: any) => Promise<any>;
+  };
+};
+
 type Analyzer = {
-  segmenter: ImageSegmenter;
-  poseLandmarker: PoseLandmarker | null;
-  faceLandmarker: FaceLandmarker | null;
+  segmenter: any;
+  poseLandmarker: any | null;
+  faceLandmarker: any | null;
 };
 
 type FaceDirectionResult = {
@@ -59,7 +80,78 @@ type FaceDirectionResult = {
   yawDegrees: number;
 };
 
+let visionModulePromise: Promise<VisionModule> | null = null;
 let analyzerPromise: Promise<Analyzer> | null = null;
+
+/**
+ * MediaPipe's published npm ESM currently contains an expression-based
+ * `import(t.toString())`. Metro tries to statically resolve that expression and
+ * fails during Web export. Google also documents a browser/CDN loading path for
+ * Tasks Vision, so this DOM-only component loads the same pinned module at
+ * runtime instead of asking Metro to bundle it.
+ *
+ * The dynamic import lives inside a browser-created module-script string; Metro
+ * only sees a string literal and never parses `vision_bundle.mjs`. The same DOM
+ * component runs in the browser on Web and in Expo's DOM WebView on native.
+ */
+function loadVisionModule(): Promise<VisionModule> {
+  const root = globalThis as any;
+  const existing = root[VISION_GLOBAL_KEY] as VisionModule | undefined;
+  if (existing) return Promise.resolve(existing);
+  if (visionModulePromise) return visionModulePromise;
+
+  visionModulePromise = new Promise<VisionModule>((resolve, reject) => {
+    const cleanupListeners = () => {
+      root.removeEventListener?.(VISION_READY_EVENT, onReady);
+      root.removeEventListener?.(VISION_ERROR_EVENT, onError);
+    };
+
+    const onReady = () => {
+      const loaded = root[VISION_GLOBAL_KEY] as VisionModule | undefined;
+      cleanupListeners();
+      if (loaded) resolve(loaded);
+      else reject(new Error('MediaPipe runtime signaled ready without exports.'));
+    };
+
+    const onError = () => {
+      const message = String(root[VISION_ERROR_KEY] ?? 'Could not load the MediaPipe runtime.');
+      cleanupListeners();
+      reject(new Error(message));
+    };
+
+    root.addEventListener?.(VISION_READY_EVENT, onReady);
+    root.addEventListener?.(VISION_ERROR_EVENT, onError);
+
+    const existingLoader = document.getElementById(VISION_LOADER_ID);
+    if (existingLoader) return;
+
+    const script = document.createElement('script');
+    script.id = VISION_LOADER_ID;
+    script.type = 'module';
+    script.textContent = `
+      import(${JSON.stringify(VISION_MODULE_URL)})
+        .then((module) => {
+          globalThis[${JSON.stringify(VISION_GLOBAL_KEY)}] = module;
+          globalThis.dispatchEvent(new Event(${JSON.stringify(VISION_READY_EVENT)}));
+        })
+        .catch((error) => {
+          globalThis[${JSON.stringify(VISION_ERROR_KEY)}] = error instanceof Error ? error.message : String(error);
+          globalThis.dispatchEvent(new Event(${JSON.stringify(VISION_ERROR_EVENT)}));
+        });
+    `;
+    script.addEventListener('error', () => {
+      root[VISION_ERROR_KEY] = 'Browser could not execute the MediaPipe module loader.';
+      root.dispatchEvent?.(new Event(VISION_ERROR_EVENT));
+    }, { once: true });
+    document.head.appendChild(script);
+  }).catch((error) => {
+    visionModulePromise = null;
+    document.getElementById(VISION_LOADER_ID)?.remove();
+    throw error;
+  });
+
+  return visionModulePromise;
+}
 
 function normalizePickerDataUrl(dataUrl: string) {
   if (!dataUrl.startsWith('data:')) return dataUrl;
@@ -172,6 +264,7 @@ async function createWithDelegate<T>(factory: (delegate: 'GPU' | 'CPU') => Promi
 }
 
 async function createAnalyzer(): Promise<Analyzer> {
+  const { FilesetResolver, ImageSegmenter, PoseLandmarker, FaceLandmarker } = await loadVisionModule();
   const vision = await FilesetResolver.forVisionTasks(WASM_URL);
   const segmenter = await createWithDelegate((delegate) => ImageSegmenter.createFromOptions(vision, {
     baseOptions: { modelAssetPath: SEGMENTER_MODEL_URL, delegate },
@@ -180,7 +273,7 @@ async function createAnalyzer(): Promise<Analyzer> {
     outputConfidenceMasks: false,
   }));
 
-  let poseLandmarker: PoseLandmarker | null = null;
+  let poseLandmarker: any | null = null;
   try {
     poseLandmarker = await createWithDelegate((delegate) => PoseLandmarker.createFromOptions(vision, {
       baseOptions: { modelAssetPath: POSE_MODEL_URL, delegate },
@@ -195,7 +288,7 @@ async function createAnalyzer(): Promise<Analyzer> {
     // Pose is an enhancement. The segmentation contour remains usable without it.
   }
 
-  let faceLandmarker: FaceLandmarker | null = null;
+  let faceLandmarker: any | null = null;
   try {
     faceLandmarker = await createWithDelegate((delegate) => FaceLandmarker.createFromOptions(vision, {
       baseOptions: { modelAssetPath: FACE_MODEL_URL, delegate },
@@ -263,7 +356,7 @@ async function analyze(dataUrl: string): Promise<PersonContourDetection> {
 
   return new Promise<PersonContourDetection>((resolve, reject) => {
     try {
-      segmenter.segment(image, (result) => {
+      segmenter.segment(image, (result: any) => {
         const categoryMask = result.categoryMask;
         if (!categoryMask) {
           reject(new Error('MediaPipe did not return a person mask.'));
