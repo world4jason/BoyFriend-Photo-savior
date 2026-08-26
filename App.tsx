@@ -182,6 +182,11 @@ export default function App() {
   const resetTransform = () => updateTransform({ dx: 0, dy: 0, scale: 1 });
 
   const openCamera = async () => {
+    if (analysisStatus === 'analyzing') {
+      Alert.alert('Guide is still analyzing', 'Wait for the reference guide to finish before opening the camera.');
+      return;
+    }
+
     if (!permission?.granted) {
       const next = await requestPermission();
       if (!next.granted) {
@@ -415,6 +420,7 @@ export default function App() {
       : analysisStatus === 'error'
         ? styles.statusError
         : styles.statusWorking;
+    const isAnalyzing = analysisStatus === 'analyzing';
 
     return (
       <SafeAreaView style={styles.safe}>
@@ -440,7 +446,7 @@ export default function App() {
 
           <View style={[styles.statusCard, statusTone]}>
             <Text style={styles.statusTitle}>
-              {analysisStatus === 'analyzing'
+              {isAnalyzing
                 ? 'Analyzing reference'
                 : analysisStatus === 'ready'
                   ? 'Automatic guide ready'
@@ -468,7 +474,13 @@ export default function App() {
 
           <View style={styles.bottomActions}>
             <Pressable style={styles.secondaryButton} onPress={pickReference}><Text style={styles.secondaryText}>Choose another</Text></Pressable>
-            <Pressable style={styles.primarySmall} onPress={openCamera}><Text style={styles.primaryButtonText}>Open camera</Text></Pressable>
+            <Pressable
+              style={[styles.primarySmall, isAnalyzing && styles.primarySmallDisabled]}
+              onPress={openCamera}
+              disabled={isAnalyzing}
+            >
+              <Text style={styles.primaryButtonText}>{isAnalyzing ? 'Analyzing…' : 'Open camera'}</Text>
+            </Pressable>
           </View>
         </ScrollView>
       </SafeAreaView>
@@ -611,6 +623,7 @@ const styles = StyleSheet.create({
   secondaryButton: { flex: 1, paddingVertical: 15, borderRadius: 16, alignItems: 'center', backgroundColor: '#17191E' },
   secondaryText: { color: '#FFF', fontWeight: '800' },
   primarySmall: { flex: 1.35, paddingVertical: 15, borderRadius: 16, alignItems: 'center', backgroundColor: '#F8FF61' },
+  primarySmallDisabled: { opacity: 0.45 },
   cameraWrap: { flex: 1, overflow: 'hidden' },
   liveBadge: { position: 'absolute', top: 20, alignSelf: 'center', backgroundColor: 'rgba(0,0,0,0.72)', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 16, alignItems: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.20)' },
   liveBadgeMatched: { backgroundColor: 'rgba(29,75,45,0.88)', borderColor: '#85F3A7' },
