@@ -27,12 +27,44 @@ type NamedPoint = { name: string; point: NormalizedPoint };
 
 const clamp01 = (value: number) => Math.max(0, Math.min(1, value));
 
-function applyTransform(point: NormalizedPoint, guide: GuideSpec): NormalizedPoint {
-  const transform = guide.transform ?? { dx: 0, dy: 0, scale: 1 };
+/**
+ * Map a normalized source-frame point into the same aspect-fit frame used by
+ * GuideOverlay when the camera/container aspect differs from the reference.
+ */
+function fitPointToAspect(
+  point: NormalizedPoint,
+  sourceAspect?: number,
+  containerAspect?: number,
+): NormalizedPoint {
+  if (!sourceAspect || sourceAspect <= 0 || !containerAspect || containerAspect <= 0) return point;
+  if (Math.abs(sourceAspect - containerAspect) < 0.0001) return point;
+
+  if (containerAspect > sourceAspect) {
+    const frameWidth = sourceAspect / containerAspect;
+    return {
+      x: (1 - frameWidth) / 2 + point.x * frameWidth,
+      y: point.y,
+    };
+  }
+
+  const frameHeight = containerAspect / sourceAspect;
   return {
+    x: point.x,
+    y: (1 - frameHeight) / 2 + point.y * frameHeight,
+  };
+}
+
+function applyTransform(
+  point: NormalizedPoint,
+  guide: GuideSpec,
+  containerAspect?: number,
+): NormalizedPoint {
+  const transform = guide.transform ?? { dx: 0, dy: 0, scale: 1 };
+  const transformed = {
     x: ((point.x - 0.5) * transform.scale) + 0.5 + transform.dx,
     y: ((point.y - 0.5) * transform.scale) + 0.5 + transform.dy,
   };
+  return fitPointToAspect(transformed, guide.aspectRatio, containerAspect);
 }
 
 function personPoints(person: PersonGuide): NamedPoint[] {
@@ -96,14 +128,25 @@ function boxFromPoints(points: NormalizedPoint[]): Box {
   };
 }
 
-function transformedPersonBox(guide: GuideSpec, person: PersonGuide): Box {
-  return boxFromPoints(personPoints(person).map(({ point }) => applyTransform(point, guide)));
+function transformedPersonBox(
+  guide: GuideSpec,
+  person: PersonGuide,
+  containerAspect?: number,
+): Box {
+  return boxFromPoints(personPoints(person).map(({ point }) => applyTransform(point, guide, containerAspect)));
 }
 
-function relativePoseScore(targetGuide: GuideSpec, target: PersonGuide, live: PersonGuide): { score?: number; worst?: string; dy?: number } {
-  const targetBox = transformedPersonBox(targetGuide, target);
-  const liveBox = transformedPersonBox({ ...targetGuide, transform: { dx: 0, dy: 0, scale: 1 } }, live);
-  const targetNamed = new Map(personPoints(target).map(({ name, point }) => [name, applyTransform(point, targetGuide)]));
+function relativePoseScore(
+  targetGuide: GuideSpec,
+  target: PersonGuide,
+  liveGuide: GuideSpec,
+  live: PersonGuide,
+): { score?: number; worst?: string; dy?: number } {
+  const liveAspect = liveGuide.aspectRatio ?? targetGuide.aspectRatio;
+  const targetBox = transformedPersonBox(targetGuide, target, liveAspect);
+  const liveIdentity: GuideSpec = { ...liveGuide, transform: { dx: 0, dy: 0, scale: 1 } };
+  const liveBox = transformedPersonBox(liveIdentity, live, liveAspect);
+  const targetNamed = new Map(personPoints(target).map(({ name, point }) => [name, applyTransform(point, targetGuide, liveAspect)]));
   const liveNamed = new Map(personPoints(live).map(({ name, point }) => [name, point]));
 
   const jointNames = [
@@ -169,9 +212,13 @@ export function scorePortraitMatch(targetGuide: GuideSpec, liveGuide: GuideSpec)
     };
   }
 
-  const targetBox = transformedPersonBox(targetGuide, target);
+  // The renderer aspect-fits the reference geometry into the camera frame. The
+  // matcher must compare in that same coordinate space or a 3:4 target shown
+  // in a 9:16 camera can look aligned while still receiving wrong scale hints.
+  const liveAspect = liveGuide.aspectRatio ?? targetGuide.aspectRatio;
+  const targetBox = transformedPersonBox(targetGuide, target, liveAspect);
   const liveIdentity: GuideSpec = { ...liveGuide, transform: { dx: 0, dy: 0, scale: 1 } };
-  const liveBox = transformedPersonBox(liveIdentity, live);
+  const liveBox = transformedPersonBox(liveIdentity, live, liveAspect);
 
   const dx = liveBox.center.x - targetBox.center.x;
   const dy = liveBox.center.y - targetBox.center.y;
@@ -182,7 +229,7 @@ export function scorePortraitMatch(targetGuide: GuideSpec, liveGuide: GuideSpec)
   const scaleError = Math.abs(Math.log(Math.max(0.05, heightRatio)));
   const scaleScore = clamp01(1 - scaleError / 0.52);
 
-  const pose = relativePoseScore(targetGuide, target, live);
+  const pose = relativePoseScore(targetGuide, target, liveGuide, live);
   const targetFacing = target.head.facing;
   const liveFacing = live.head.facing;
   let faceScore: number | undefined;
