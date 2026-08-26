@@ -4,6 +4,35 @@ A **reference/template -> shared geometry -> display mode -> camera guide -> liv
 
 > 想直接使用：看 [`docs/USAGE.md`](docs/USAGE.md)。
 
+## Try / install
+
+### Web
+
+The public repository can be launched to EAS Hosting directly from the browser with Expo Launch:
+
+**[Launch this repo to Web](https://launch.expo.dev/?github=https://github.com/world4jason/BoyFriend-Photo-savior&projectName=BoyFriend%20Photo%20Savior&projectDomain=boyfriend-photo-savior)**
+
+The first launch requires signing in to an Expo account. After the first production deployment completes, replace this setup link with the resulting stable `https://<domain>.expo.app/` URL.
+
+### Android APK
+
+The repo is configured with an EAS `preview` profile that outputs an installable `.apk` rather than an `.aab`:
+
+```bash
+npx eas-cli@latest login
+npm run build:apk
+```
+
+After the build finishes, EAS provides an install/download URL and QR code. The artifact can also be downloaded with:
+
+```bash
+npm run download:apk
+```
+
+Then attach that APK to a GitHub Release for a stable repository download. See [`docs/RELEASE.md`](docs/RELEASE.md).
+
+**Current status:** distribution config is ready, but no production Web deployment URL or GitHub Release APK should be claimed until the first authenticated EAS deploy/build actually completes.
+
 ## Product model
 
 ```text
@@ -39,6 +68,7 @@ For an uploaded portrait, analysis happens once. The same geometry can be presen
 This project uses **OpenSpec** for behavior contracts.
 
 - [`docs/USAGE.md`](docs/USAGE.md) — end-user MVP usage guide
+- [`docs/RELEASE.md`](docs/RELEASE.md) — Web/APK distribution and release guide
 - [`openspec/specs/`](openspec/specs/) — current observable capability requirements/scenarios
 - [`openspec/config.yaml`](openspec/config.yaml) — project/spec workflow context and rules
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — implementation layers, invariants, technical debt
@@ -213,13 +243,14 @@ See [`docs/USAGE.md`](docs/USAGE.md) for practical usage and [`docs/ARCHITECTURE
 
 ## Next milestones
 
-1. Save captured photos to Photos / Gallery and add Share / Export.
-2. Add repeatable Web + iOS + Android smoke-test coverage.
-3. Add unit tests for match scoring, aspect-fit mapping, stable-match transitions, mode mapping and catalog invariants.
-4. Migrate template/sample data fully to canonical `displayMode`.
-5. Migrate legacy SafeAreaView usage to `react-native-safe-area-context`.
-6. Replace approximate Ghost POC slots with better source-derived normalized geometry where useful.
-7. True live frame processing (15–30 FPS target).
-8. Better contour tracing around separated arms, legs and props.
-9. Arbitrary multi-person / food / object extraction and matching.
-10. Bundle MediaPipe runtime/models for offline use.
+1. Complete the first authenticated Web deployment and Android APK build; publish the resulting URL/APK in README/Releases.
+2. Save captured photos to Photos / Gallery and add Share / Export.
+3. Add repeatable Web + iOS + Android smoke-test coverage.
+4. Add unit tests for match scoring, aspect-fit mapping, stable-match transitions, mode mapping and catalog invariants.
+5. Migrate template/sample data fully to canonical `displayMode`.
+6. Migrate legacy SafeAreaView usage to `react-native-safe-area-context`.
+7. Replace approximate Ghost POC slots with better source-derived normalized geometry where useful.
+8. True live frame processing (15–30 FPS target).
+9. Better contour tracing around separated arms, legs and props.
+10. Arbitrary multi-person / food / object extraction and matching.
+11. Bundle MediaPipe runtime/models for offline use.
