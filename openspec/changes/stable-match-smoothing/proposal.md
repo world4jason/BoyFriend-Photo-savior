@@ -13,10 +13,11 @@ Before Auto Capture can be safe, the camera needs a stable temporal gate rather 
 ## Proposed behavior
 
 - Smooth the displayed aggregate score across recent samples.
-- Require three consecutive raw `matched` samples before exposing a stable green match state.
-- Once stable, require two consecutive non-matched samples before clearing the stable state.
+- Require **two consecutive** raw `matched` samples before exposing a stable green match state.
+- Once stable, tolerate one minor miss and clear after two consecutive minor misses.
+- Clear stable state immediately when framing/scale is severely wrong.
 - Keep raw per-sample matching geometry and hint priority unchanged.
-- Expose stability as pure matching-domain state so a later Auto Capture feature can depend on it without coupling to `CameraView`.
+- Expose stability as pure matching-domain state so a later Auto Capture feature can depend on the transition into stability without coupling to `CameraView`.
 
 ## Platform impact
 
