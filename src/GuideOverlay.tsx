@@ -93,10 +93,7 @@ export function GuideOverlay({ guide, width, height, opacity = 0.94, visualStyle
     );
   };
 
-  /**
-   * Approximate body envelope for template seeds that do not have a segmentation
-   * contour. Outline draws two outside edges; Ghost draws a translucent filled tube.
-   */
+  /** Outline draws limb edges; Ghost draws filled limb tubes for vector-only seeds. */
   const envelopeLimb = (
     a: NormalizedPoint | undefined,
     b: NormalizedPoint | undefined,
@@ -115,8 +112,7 @@ export function GuideOverlay({ guide, width, height, opacity = 0.94, visualStyle
     if (style === 'poseghost') {
       return (
         <Line
-          key={key}
-          x1={pa.x} y1={pa.y} x2={pb.x} y2={pb.y}
+          key={key} x1={pa.x} y1={pa.y} x2={pb.x} y2={pb.y}
           stroke={visual.stroke} strokeWidth={radius * 2.15}
           strokeLinecap="round" strokeOpacity={Math.max(0.20, opacity * 0.34)}
         />
@@ -295,6 +291,11 @@ export function GuideOverlay({ guide, width, height, opacity = 0.94, visualStyle
   };
 
   const objects = guide.objects ?? [];
+  const annotations = guide.annotations ?? [];
+  const showBaseGrid = visual.showGrid && (
+    guide.kind === 'portrait' || (guide.kind === 'scene' && annotations.length === 0)
+  );
+
   const renderPortraits = () => {
     if (style === 'poseoverlay') return guide.people.map(skeletonPerson);
     if (style === 'recompose') {
@@ -327,7 +328,7 @@ export function GuideOverlay({ guide, width, height, opacity = 0.94, visualStyle
         />
       ) : null}
 
-      {visual.showGrid ? (
+      {showBaseGrid ? (
         <>
           <Line x1={frame.x + frame.width / 3} y1={frame.y} x2={frame.x + frame.width / 3} y2={frame.y + frame.height} stroke={visual.secondary} strokeOpacity={0.15} />
           <Line x1={frame.x + (frame.width * 2) / 3} y1={frame.y} x2={frame.x + (frame.width * 2) / 3} y2={frame.y + frame.height} stroke={visual.secondary} strokeOpacity={0.15} />
@@ -340,7 +341,7 @@ export function GuideOverlay({ guide, width, height, opacity = 0.94, visualStyle
 
       {style === 'recompose' ? (
         <CompositionAnnotations
-          annotations={guide.annotations} tx={tx} ty={ty} rx={rx} ry={ry}
+          annotations={annotations} tx={tx} ty={ty} rx={rx} ry={ry}
           stroke={visual.stroke} secondary={visual.secondary} opacity={opacity}
         />
       ) : null}
