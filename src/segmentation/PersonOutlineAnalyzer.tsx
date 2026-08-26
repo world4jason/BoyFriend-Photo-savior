@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo } from 'react';
 import { Platform, StyleSheet, View } from 'react-native';
 import { WebView } from 'react-native-webview';
+import { PoseLandmark } from '../pose/PoseDetector';
 import { NormalizedPoint } from '../types';
 import { PersonContourDetection } from './guideFromContour';
 
@@ -17,10 +18,31 @@ type Props = {
   onError: (request: OutlineAnalysisRequest, message: string) => void;
 };
 
-const MODEL_URL = 'https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmenter/float16/latest/selfie_segmenter.tflite';
-const WASM_URL = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22/wasm';
+const MEDIAPIPE_VERSION = '1.0.1';
+const SEGMENTER_MODEL_URL = 'https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmenter/float16/latest/selfie_segmenter.tflite';
+const POSE_MODEL_URL = 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task';
+const WASM_URL = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MEDIAPIPE_VERSION}/wasm`;
 
-let webSegmenterPromise: Promise<any> | null = null;
+const POSE_NAMES = [
+  'nose',
+  'left_eye_inner', 'left_eye', 'left_eye_outer',
+  'right_eye_inner', 'right_eye', 'right_eye_outer',
+  'left_ear', 'right_ear',
+  'mouth_left', 'mouth_right',
+  'left_shoulder', 'right_shoulder',
+  'left_elbow', 'right_elbow',
+  'left_wrist', 'right_wrist',
+  'left_pinky', 'right_pinky',
+  'left_index', 'right_index',
+  'left_thumb', 'right_thumb',
+  'left_hip', 'right_hip',
+  'left_knee', 'right_knee',
+  'left_ankle', 'right_ankle',
+  'left_heel', 'right_heel',
+  'left_foot_index', 'right_foot_index',
+] as const;
+
+let webAnalyzerPromise: Promise<{ segmenter: any; poseLandmarker: any | null }> | null = null;
 
 /**
  * Expo ImagePicker documents `base64` as JPEG data. Some platforms still report
@@ -32,6 +54,25 @@ function normalizePickerDataUrl(dataUrl: string) {
   const comma = dataUrl.indexOf(',');
   if (comma < 0) return dataUrl;
   return `data:image/jpeg;base64,${dataUrl.slice(comma + 1)}`;
+}
+
+const clamp01 = (value: number) => Math.max(0, Math.min(1, value));
+
+function poseResultToLandmarks(result: any): PoseLandmark[] {
+  const pose = result?.landmarks?.[0];
+  if (!Array.isArray(pose)) return [];
+  return pose
+    .map((point: any, index: number) => ({
+      name: POSE_NAMES[index] ?? `landmark_${index}`,
+      x: clamp01(Number(point?.x ?? 0)),
+      y: clamp01(Number(point?.y ?? 0)),
+      confidence: Number.isFinite(point?.visibility)
+        ? Number(point.visibility)
+        : Number.isFinite(point?.presence)
+          ? Number(point.presence)
+          : undefined,
+    }))
+    .filter((point: PoseLandmark) => Number.isFinite(point.x) && Number.isFinite(point.y));
 }
 
 const simplifySide = (points: NormalizedPoint[]) => {
@@ -78,33 +119,56 @@ export function maskToOuterContour(mask: ArrayLike<number>, width: number, heigh
   };
 }
 
-async function getWebSegmenter() {
-  if (!webSegmenterPromise) {
-    webSegmenterPromise = (async () => {
+async function createSegmenter(visionTasks: any, vision: any) {
+  const options = (delegate: 'GPU' | 'CPU') => ({
+    baseOptions: { modelAssetPath: SEGMENTER_MODEL_URL, delegate },
+    runningMode: 'IMAGE',
+    outputCategoryMask: true,
+    outputConfidenceMasks: false,
+  });
+  try {
+    return await visionTasks.ImageSegmenter.createFromOptions(vision, options('GPU'));
+  } catch {
+    return visionTasks.ImageSegmenter.createFromOptions(vision, options('CPU'));
+  }
+}
+
+async function createPoseLandmarker(visionTasks: any, vision: any) {
+  const options = (delegate: 'GPU' | 'CPU') => ({
+    baseOptions: { modelAssetPath: POSE_MODEL_URL, delegate },
+    runningMode: 'IMAGE',
+    numPoses: 1,
+    minPoseDetectionConfidence: 0.35,
+    minPosePresenceConfidence: 0.25,
+    minTrackingConfidence: 0.25,
+    outputSegmentationMasks: false,
+  });
+  try {
+    return await visionTasks.PoseLandmarker.createFromOptions(vision, options('GPU'));
+  } catch {
+    try {
+      return await visionTasks.PoseLandmarker.createFromOptions(vision, options('CPU'));
+    } catch {
+      return null;
+    }
+  }
+}
+
+async function getWebAnalyzer() {
+  if (!webAnalyzerPromise) {
+    webAnalyzerPromise = (async () => {
       const visionTasks = await import('@mediapipe/tasks-vision');
       const vision = await visionTasks.FilesetResolver.forVisionTasks(WASM_URL);
-      try {
-        return await visionTasks.ImageSegmenter.createFromOptions(vision, {
-          baseOptions: { modelAssetPath: MODEL_URL, delegate: 'GPU' },
-          runningMode: 'IMAGE',
-          outputCategoryMask: true,
-          outputConfidenceMasks: false,
-        });
-      } catch {
-        return visionTasks.ImageSegmenter.createFromOptions(vision, {
-          baseOptions: { modelAssetPath: MODEL_URL, delegate: 'CPU' },
-          runningMode: 'IMAGE',
-          outputCategoryMask: true,
-          outputConfidenceMasks: false,
-        });
-      }
+      const segmenter = await createSegmenter(visionTasks, vision);
+      const poseLandmarker = await createPoseLandmarker(visionTasks, vision);
+      return { segmenter, poseLandmarker };
     })();
   }
-  return webSegmenterPromise;
+  return webAnalyzerPromise;
 }
 
 async function analyzeOnWeb(request: OutlineAnalysisRequest): Promise<PersonContourDetection> {
-  const segmenter = await getWebSegmenter();
+  const { segmenter, poseLandmarker } = await getWebAnalyzer();
   const ImageCtor = (globalThis as any).Image;
   if (!ImageCtor) throw new Error('Browser image decoding is unavailable.');
 
@@ -116,6 +180,15 @@ async function analyzeOnWeb(request: OutlineAnalysisRequest): Promise<PersonCont
     image.onerror = () => reject(new Error('Could not decode the selected image.'));
   });
 
+  let poseLandmarks: PoseLandmark[] = [];
+  if (poseLandmarker) {
+    try {
+      poseLandmarks = poseResultToLandmarks(poseLandmarker.detect(image));
+    } catch {
+      poseLandmarks = [];
+    }
+  }
+
   return new Promise<PersonContourDetection>((resolve, reject) => {
     try {
       segmenter.segment(image, (result: any) => {
@@ -125,7 +198,7 @@ async function analyzeOnWeb(request: OutlineAnalysisRequest): Promise<PersonCont
           const data = categoryMask.getAsUint8Array();
           const detection = maskToOuterContour(data, categoryMask.width, categoryMask.height);
           categoryMask.close?.();
-          resolve(detection);
+          resolve({ ...detection, poseLandmarks });
         } catch (error) {
           reject(error);
         }
@@ -143,11 +216,14 @@ function nativeHtml(dataUrl: string) {
 <head><meta name="viewport" content="width=device-width,initial-scale=1" /></head>
 <body>
 <script type="module">
-import { FilesetResolver, ImageSegmenter } from 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22/+esm';
-const MODEL = ${JSON.stringify(MODEL_URL)};
+import { FilesetResolver, ImageSegmenter, PoseLandmarker } from 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MEDIAPIPE_VERSION}/+esm';
+const SEGMENTER_MODEL = ${JSON.stringify(SEGMENTER_MODEL_URL)};
+const POSE_MODEL = ${JSON.stringify(POSE_MODEL_URL)};
 const WASM = ${JSON.stringify(WASM_URL)};
+const POSE_NAMES = ${JSON.stringify(POSE_NAMES)};
 const source = ${safeDataUrl};
 const send = (payload) => window.ReactNativeWebView.postMessage(JSON.stringify(payload));
+const clamp01 = (value) => Math.max(0, Math.min(1, Number(value) || 0));
 
 function simplify(points) {
   if (points.length <= 44) return points;
@@ -185,36 +261,66 @@ function contourFromMask(mask, width, height) {
   };
 }
 
+function poseToLandmarks(result) {
+  const pose = result?.landmarks?.[0];
+  if (!Array.isArray(pose)) return [];
+  return pose.map((point, index) => ({
+    name: POSE_NAMES[index] || ('landmark_' + index),
+    x: clamp01(point?.x),
+    y: clamp01(point?.y),
+    confidence: Number.isFinite(point?.visibility)
+      ? Number(point.visibility)
+      : Number.isFinite(point?.presence)
+        ? Number(point.presence)
+        : undefined,
+  }));
+}
+
+async function withDelegate(factory) {
+  try { return await factory('GPU'); }
+  catch (_) { return factory('CPU'); }
+}
+
 (async () => {
   try {
     const vision = await FilesetResolver.forVisionTasks(WASM);
-    let segmenter;
+    const segmenter = await withDelegate((delegate) => ImageSegmenter.createFromOptions(vision, {
+      baseOptions: { modelAssetPath: SEGMENTER_MODEL, delegate },
+      runningMode: 'IMAGE',
+      outputCategoryMask: true,
+      outputConfidenceMasks: false,
+    }));
+
+    let poseLandmarker = null;
     try {
-      segmenter = await ImageSegmenter.createFromOptions(vision, {
-        baseOptions: { modelAssetPath: MODEL, delegate: 'GPU' },
+      poseLandmarker = await withDelegate((delegate) => PoseLandmarker.createFromOptions(vision, {
+        baseOptions: { modelAssetPath: POSE_MODEL, delegate },
         runningMode: 'IMAGE',
-        outputCategoryMask: true,
-        outputConfidenceMasks: false,
-      });
-    } catch (_) {
-      segmenter = await ImageSegmenter.createFromOptions(vision, {
-        baseOptions: { modelAssetPath: MODEL, delegate: 'CPU' },
-        runningMode: 'IMAGE',
-        outputCategoryMask: true,
-        outputConfidenceMasks: false,
-      });
-    }
+        numPoses: 1,
+        minPoseDetectionConfidence: 0.35,
+        minPosePresenceConfidence: 0.25,
+        minTrackingConfidence: 0.25,
+        outputSegmentationMasks: false,
+      }));
+    } catch (_) {}
 
     const image = new Image();
     image.src = source;
     await image.decode();
+
+    let poseLandmarks = [];
+    if (poseLandmarker) {
+      try { poseLandmarks = poseToLandmarks(poseLandmarker.detect(image)); }
+      catch (_) { poseLandmarks = []; }
+    }
+
     segmenter.segment(image, (result) => {
       try {
         const mask = result.categoryMask;
         if (!mask) throw new Error('MediaPipe did not return a person mask.');
         const detection = contourFromMask(mask.getAsUint8Array(), mask.width, mask.height);
         mask.close?.();
-        send({ type: 'result', result: detection });
+        send({ type: 'result', result: { ...detection, poseLandmarks } });
       } catch (error) {
         send({ type: 'error', message: String(error?.message || error) });
       }
