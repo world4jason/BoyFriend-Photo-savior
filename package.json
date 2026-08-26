@@ -9,7 +9,6 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "export:web": "expo export --platform web",
-    "deploy:web": "npm run export:web && npx eas-cli@latest deploy --prod",
     "build:apk": "npx eas-cli@latest build --platform android --profile preview",
     "download:apk": "npx eas-cli@latest build:download --platform android",
     "build:aab": "npx eas-cli@latest build --platform android --profile production",
