@@ -120,6 +120,7 @@ export default function App() {
     const reset = resetMatchStability();
     matchStabilityRef.current = reset;
     setMatchStability(reset);
+    setLiveFeedback(null);
   };
 
   const setGuidePreset = (preset: GuidePreset) => {
@@ -268,7 +269,6 @@ export default function App() {
     }
     setCapturedUri(null);
     setCameraReady(false);
-    setLiveFeedback(null);
     setLiveError('');
     resetLiveStability();
     setLiveEnabled(guide.kind === 'portrait');
@@ -279,7 +279,6 @@ export default function App() {
     cleanupRequestFiles(liveRequest);
     setCameraReady(false);
     setLiveRequest(null);
-    setLiveFeedback(null);
     resetLiveStability();
     liveBusyRef.current = false;
     setScreen('reference');
@@ -290,7 +289,6 @@ export default function App() {
     if (liveEnabled) {
       cleanupRequestFiles(liveRequest);
       setLiveRequest(null);
-      setLiveFeedback(null);
       setLiveError('');
       liveBusyRef.current = false;
       setLiveEnabled(false);
@@ -325,7 +323,6 @@ export default function App() {
       setLiveFeedback(feedback);
       setLiveError('');
     } catch (error) {
-      setLiveFeedback(null);
       resetLiveStability();
       setLiveError(error instanceof Error ? error.message : 'Could not match the live subject.');
     } finally {
@@ -337,7 +334,6 @@ export default function App() {
 
   const onLiveError = (request: OutlineAnalysisRequest, message: string) => {
     cleanupRequestFiles(request);
-    setLiveFeedback(null);
     resetLiveStability();
     setLiveError(message);
     setLiveRequest(null);
