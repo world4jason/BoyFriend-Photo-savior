@@ -18,6 +18,12 @@ import { cleanupTemporaryUri, prepareAnalysisImage } from './src/analysis/prepar
 import { GUIDE_PRESETS, getGuidePreset } from './src/guidePresets';
 import { GuideOverlay } from './src/GuideOverlay';
 import { MatchFeedback, scorePortraitMatch } from './src/matching/guideMatch';
+import {
+  advanceMatchStability,
+  MatchStabilityState,
+  resetMatchStability,
+  stableMatchProgress,
+} from './src/matching/stableMatch';
 import { SAMPLE_REFERENCES, SampleReference } from './src/sampleReferences';
 import { OutlineAnalysisRequest, PersonOutlineAnalyzer } from './src/segmentation/PersonOutlineAnalyzer';
 import { buildGuideFromContour, PersonContourDetection } from './src/segmentation/guideFromContour';
@@ -73,9 +79,11 @@ export default function App() {
   const [liveRequest, setLiveRequest] = useState<OutlineAnalysisRequest | null>(null);
   const [liveFeedback, setLiveFeedback] = useState<MatchFeedback | null>(null);
   const [liveError, setLiveError] = useState('');
+  const [matchStability, setMatchStability] = useState<MatchStabilityState>(() => resetMatchStability());
 
   const cameraRef = useRef<CameraView | null>(null);
   const liveBusyRef = useRef(false);
+  const matchStabilityRef = useRef<MatchStabilityState>(resetMatchStability());
   const referencePrepareGenerationRef = useRef(0);
   const selectedPresetRef = useRef<GuidePreset>(DEFAULT_GUIDE.visualStyle ?? 'sovs');
 
@@ -107,6 +115,13 @@ export default function App() {
       : 'All';
     setTemplateCategory(nextCategory);
   }, [templateMode, modeTemplates.length, templateCategories]);
+
+  const resetLiveStability = () => {
+    const reset = resetMatchStability();
+    matchStabilityRef.current = reset;
+    setMatchStability(reset);
+    setLiveFeedback(null);
+  };
 
   const setGuidePreset = (preset: GuidePreset) => {
     selectedPresetRef.current = preset;
@@ -254,8 +269,8 @@ export default function App() {
     }
     setCapturedUri(null);
     setCameraReady(false);
-    setLiveFeedback(null);
     setLiveError('');
+    resetLiveStability();
     setLiveEnabled(guide.kind === 'portrait');
     setScreen('camera');
   };
@@ -264,21 +279,22 @@ export default function App() {
     cleanupRequestFiles(liveRequest);
     setCameraReady(false);
     setLiveRequest(null);
-    setLiveFeedback(null);
+    resetLiveStability();
     liveBusyRef.current = false;
     setScreen('reference');
   };
 
   const toggleLiveCoach = () => {
+    resetLiveStability();
     if (liveEnabled) {
       cleanupRequestFiles(liveRequest);
       setLiveRequest(null);
-      setLiveFeedback(null);
       setLiveError('');
       liveBusyRef.current = false;
       setLiveEnabled(false);
       return;
     }
+    setLiveError('');
     setLiveEnabled(true);
   };
 
@@ -300,10 +316,14 @@ export default function App() {
   const onLiveResult = (request: OutlineAnalysisRequest, detection: PersonContourDetection) => {
     try {
       const liveGuide = buildGuideFromContour(detection, request.aspectRatio);
-      setLiveFeedback(scorePortraitMatch(guide, liveGuide));
+      const feedback = scorePortraitMatch(guide, liveGuide);
+      const nextStability = advanceMatchStability(matchStabilityRef.current, feedback);
+      matchStabilityRef.current = nextStability;
+      setMatchStability(nextStability);
+      setLiveFeedback(feedback);
       setLiveError('');
     } catch (error) {
-      setLiveFeedback(null);
+      resetLiveStability();
       setLiveError(error instanceof Error ? error.message : 'Could not match the live subject.');
     } finally {
       cleanupRequestFiles(request);
@@ -314,7 +334,7 @@ export default function App() {
 
   const onLiveError = (request: OutlineAnalysisRequest, message: string) => {
     cleanupRequestFiles(request);
-    setLiveFeedback(null);
+    resetLiveStability();
     setLiveError(message);
     setLiveRequest(null);
     liveBusyRef.current = false;
@@ -332,6 +352,7 @@ export default function App() {
         const frame = await cameraRef.current.takePictureAsync({ quality: 0.32, shutterSound: false });
         if (!frame?.uri) {
           liveBusyRef.current = false;
+          resetLiveStability();
           setLiveError('Live analysis frame was unavailable.');
           return;
         }
@@ -355,7 +376,10 @@ export default function App() {
         cleanupTemporaryUri(sourceUri);
         cleanupTemporaryUri(preparedUri);
         liveBusyRef.current = false;
-        if (!cancelled) setLiveError(error instanceof Error ? error.message : 'Live sampling failed.');
+        if (!cancelled) {
+          resetLiveStability();
+          setLiveError(error instanceof Error ? error.message : 'Live sampling failed.');
+        }
       }
     };
     const first = setTimeout(sampleFrame, 700);
@@ -574,16 +598,41 @@ export default function App() {
     );
   }
 
+  const stabilityProgress = stableMatchProgress(matchStability);
+  const headlineScore = matchStability.sampleCount > 0
+    ? matchStability.smoothedScore
+    : liveFeedback?.score;
+  const holdingForStable = Boolean(
+    guide.kind === 'portrait'
+      && liveEnabled
+      && liveFeedback?.status === 'matched'
+      && !matchStability.stableMatched,
+  );
+
   const matchLabel = guide.kind === 'portrait'
-    ? liveFeedback ? `${liveFeedback.score}% · ${liveFeedback.status.toUpperCase()}` : liveEnabled ? 'SCANNING…' : 'LIVE COACH OFF'
+    ? matchStability.stableMatched
+      ? `${headlineScore ?? 0}% · STABLE`
+      : liveFeedback
+        ? holdingForStable
+          ? `${headlineScore ?? liveFeedback.score}% · HOLD ${stabilityProgress.current}/${stabilityProgress.required}`
+          : `${headlineScore ?? liveFeedback.score}% · ${liveFeedback.status.toUpperCase()}`
+        : liveEnabled ? 'SCANNING…' : 'LIVE COACH OFF'
     : guide.kind === 'food' ? 'MATCH OBJECT GUIDE' : 'MATCH COMPOSITION GUIDE';
 
   const liveHint = guide.kind === 'portrait'
-    ? (liveFeedback?.hint ?? (liveError ? 'Find the subject again' : 'Hold one person clearly inside the camera view.'))
+    ? matchStability.stableMatched
+      ? '✓ Stable match'
+      : holdingForStable
+        ? 'Hold position'
+        : (liveFeedback?.hint ?? (liveError ? 'Find the subject again' : 'Hold one person clearly inside the camera view.'))
     : guide.kind === 'food' ? 'Match object size + spacing' : 'Line the scene up with the guide';
 
   const liveDetail = guide.kind === 'portrait'
-    ? (liveFeedback?.detail ?? liveError ?? 'Sampled matching updates about every 1–2 seconds.')
+    ? matchStability.stableMatched
+      ? 'Composition stayed matched across samples. Ready to shoot.'
+      : holdingForStable
+        ? `Keep the pose steady for ${stabilityProgress.required - stabilityProgress.current} more matched sample.`
+        : (liveFeedback?.detail ?? liveError ?? 'Sampled matching updates about every 1–2 seconds.')
     : guide.kind === 'food' ? 'Use the labeled zones as placement targets.' : 'Use the lines, zones, points and frames as composition anchors.';
 
   return (
@@ -596,7 +645,7 @@ export default function App() {
         <GuideOverlay guide={guide} width={width} height={height} opacity={0.99} />
 
         <Pressable
-          style={[styles.liveBadge, liveFeedback?.status === 'matched' && styles.liveBadgeMatched]}
+          style={[styles.liveBadge, matchStability.stableMatched && styles.liveBadgeMatched]}
           onPress={() => guide.kind === 'portrait' && toggleLiveCoach()}
         >
           <Text style={styles.liveBadgeText}>{matchLabel}</Text>
@@ -641,7 +690,7 @@ export default function App() {
 
         <View style={styles.cameraBottom}>
           <Pressable style={styles.cameraSideButton} onPress={leaveCamera}><Text style={styles.cameraSideText}>Guide</Text></Pressable>
-          <Pressable style={[styles.shutterOuter, liveFeedback?.status === 'matched' && styles.shutterMatched]} onPress={takePhoto}>
+          <Pressable style={[styles.shutterOuter, matchStability.stableMatched && styles.shutterMatched]} onPress={takePhoto}>
             <View style={styles.shutterInner} />
           </Pressable>
           <Pressable style={styles.cameraSideButton} onPress={() => guide.kind === 'portrait' ? toggleLiveCoach() : resetTransform()}>
