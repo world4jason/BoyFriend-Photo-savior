@@ -78,6 +78,11 @@ export default function App() {
   const [analysisMessage, setAnalysisMessage] = useState('');
 
   const [cameraReady, setCameraReady] = useState(false);
+  const [cameraMountError, setCameraMountError] = useState('');
+  const [cameraViewport, setCameraViewport] = useState(() => ({
+    width: Math.max(1, width),
+    height: Math.max(1, height),
+  }));
   const [liveEnabled, setLiveEnabled] = useState(true);
   const [autoCaptureEnabled, setAutoCaptureEnabled] = useState(false);
   const [liveRequest, setLiveRequest] = useState<OutlineAnalysisRequest | null>(null);
@@ -97,6 +102,7 @@ export default function App() {
   const previewHeight = Math.min(height * 0.60, 680);
   const activePreset = getGuidePreset(guide.visualStyle ?? 'sovs');
   const availablePresets = GUIDE_PRESETS.filter((preset) => preset.supportedKinds.includes(guide.kind));
+  const liveCoachEligible = guide.kind === 'portrait' && guide.people.length === 1;
 
   const modeTemplates = useMemo(
     () => BENCHMARK_TEMPLATES.filter((template) => template.defaultPreset === templateMode),
@@ -286,9 +292,11 @@ export default function App() {
     setCaptureSource(null);
     setAutoCaptureEnabled(false);
     setCameraReady(false);
+    setCameraMountError('');
+    setCameraViewport({ width: Math.max(1, width), height: Math.max(1, height) });
     setLiveError('');
     resetLiveStability();
-    setLiveEnabled(guide.kind === 'portrait');
+    setLiveEnabled(liveCoachEligible);
     setScreen('camera');
   };
 
@@ -303,6 +311,7 @@ export default function App() {
   };
 
   const toggleLiveCoach = () => {
+    if (!liveCoachEligible) return;
     invalidateLiveSession();
     resetLiveStability();
     cleanupRequestFiles(liveRequest);
@@ -319,13 +328,11 @@ export default function App() {
   };
 
   const toggleAutoCapture = () => {
-    if (!liveEnabled) return;
+    if (!liveEnabled || !liveCoachEligible) return;
     const nextEnabled = !autoCaptureEnabled;
     setAutoCaptureEnabled(nextEnabled);
     setLiveError('');
     if (nextEnabled) {
-      // Auto Capture must earn fresh stability after explicit opt-in. Invalidate
-      // any sampled image/analysis that began before the photographer opted in.
       invalidateLiveSession();
       cleanupRequestFiles(liveRequest);
       setLiveRequest(null);
@@ -336,6 +343,10 @@ export default function App() {
 
   const takePhoto = async () => {
     if (!cameraRef.current) return;
+    if (!cameraReady || cameraMountError) {
+      setLiveError(cameraMountError || 'Camera is still starting. Wait for the preview to be ready.');
+      return;
+    }
     if (photoCaptureRef.current) {
       setLiveError('Camera is finishing another capture. Try the shutter again.');
       return;
@@ -371,9 +382,11 @@ export default function App() {
       const feedback = scorePortraitMatch(guide, liveGuide);
       const previousStability = matchStabilityRef.current;
       const nextStability = advanceMatchStability(previousStability, feedback);
-      const shouldAutoCapture = guide.kind === 'portrait'
+      const shouldAutoCapture = liveCoachEligible
         && liveEnabled
         && autoCaptureEnabled
+        && cameraReady
+        && !cameraMountError
         && didEnterStableMatch(previousStability, nextStability);
 
       matchStabilityRef.current = nextStability;
@@ -421,7 +434,7 @@ export default function App() {
   };
 
   useEffect(() => {
-    if (screen !== 'camera' || !cameraReady || !liveEnabled || guide.kind !== 'portrait') return;
+    if (screen !== 'camera' || !cameraReady || !liveEnabled || !liveCoachEligible) return;
     let cancelled = false;
     const sampleFrame = async () => {
       if (cancelled || liveBusyRef.current || photoCaptureRef.current || !cameraRef.current) return;
@@ -481,7 +494,7 @@ export default function App() {
       clearTimeout(first);
       clearInterval(timer);
     };
-  }, [screen, cameraReady, liveEnabled, guide.kind, guide.aspectRatio, guide.transform.dx, guide.transform.dy, guide.transform.scale]);
+  }, [screen, cameraReady, liveEnabled, liveCoachEligible, guide.aspectRatio, guide.transform.dx, guide.transform.dy, guide.transform.scale]);
 
   const analyzer = <PersonOutlineAnalyzer request={analysisRequest} onResult={onOutlineResult} onError={onOutlineError} />;
   const liveAnalyzer = <PersonOutlineAnalyzer request={liveRequest} onResult={onLiveResult} onError={onLiveError} />;
@@ -617,7 +630,7 @@ export default function App() {
               initialNumToRender={5}
               maxToRenderPerBatch={6}
               windowSize={5}
-              getItemLayout={(_, index) => ({ length: TEMPLATE_CARD_EXTENT, offset: TEMPLATE_CARD_EXTENT * index, index })}
+              getItemLayout={(_, index) => ({ length: TEMPLATE_CARD_WIDTH, offset: TEMPLATE_CARD_EXTENT * index, index })}
               ItemSeparatorComponent={() => <View style={styles.templateSeparator} />}
               contentContainerStyle={styles.templateRow}
               renderItem={({ item: template }) => (
@@ -695,70 +708,111 @@ export default function App() {
     ? matchStability.smoothedScore
     : liveFeedback?.score;
   const holdingForStable = Boolean(
-    guide.kind === 'portrait'
+    liveCoachEligible
       && liveEnabled
       && liveFeedback?.status === 'matched'
       && !matchStability.stableMatched,
   );
 
-  const matchLabel = guide.kind === 'portrait'
-    ? matchStability.stableMatched
-      ? `${headlineScore ?? 0}% · STABLE`
-      : liveFeedback
-        ? holdingForStable
-          ? `${headlineScore ?? liveFeedback.score}% · HOLD ${stabilityProgress.current}/${stabilityProgress.required}`
-          : `${headlineScore ?? liveFeedback.score}% · ${liveFeedback.status.toUpperCase()}`
-        : liveEnabled ? 'SCANNING…' : 'LIVE COACH OFF'
-    : guide.kind === 'food' ? 'MATCH OBJECT GUIDE' : 'MATCH COMPOSITION GUIDE';
+  const matchLabel = cameraMountError
+    ? 'CAMERA ERROR'
+    : guide.kind === 'portrait'
+      ? !liveCoachEligible
+        ? 'MANUAL GUIDE'
+        : matchStability.stableMatched
+          ? `${headlineScore ?? 0}% · STABLE`
+          : liveFeedback
+            ? holdingForStable
+              ? `${headlineScore ?? liveFeedback.score}% · HOLD ${stabilityProgress.current}/${stabilityProgress.required}`
+              : `${headlineScore ?? liveFeedback.score}% · ${liveFeedback.status.toUpperCase()}`
+            : liveEnabled ? 'SCANNING…' : 'LIVE COACH OFF'
+      : guide.kind === 'food' ? 'MATCH OBJECT GUIDE' : 'MATCH COMPOSITION GUIDE';
 
-  const liveHint = guide.kind === 'portrait'
-    ? liveError
-      ? (liveError.toLowerCase().includes('capture') ? 'Capture unavailable' : 'Find the subject again')
-      : matchStability.stableMatched
-        ? '✓ Stable match'
-        : holdingForStable
-          ? 'Hold position'
-          : (liveFeedback?.hint ?? 'Hold one person clearly inside the camera view.')
-    : guide.kind === 'food' ? 'Match object size + spacing' : 'Line the scene up with the guide';
+  const liveHint = cameraMountError
+    ? 'Camera unavailable'
+    : guide.kind === 'portrait'
+      ? !liveCoachEligible
+        ? 'Match the group manually'
+        : liveError
+          ? (liveError.toLowerCase().includes('capture') ? 'Capture unavailable' : 'Find the subject again')
+          : matchStability.stableMatched
+            ? '✓ Stable match'
+            : holdingForStable
+              ? 'Hold position'
+              : (liveFeedback?.hint ?? 'Hold one person clearly inside the camera view.')
+      : guide.kind === 'food' ? 'Match object size + spacing' : 'Line the scene up with the guide';
 
-  const liveDetail = guide.kind === 'portrait'
-    ? liveError
-      ? liveError
-      : matchStability.stableMatched
-        ? autoCaptureEnabled
-          ? 'Stable match. Auto Capture fires once when each stable period begins.'
-          : 'Composition stayed matched across samples. Ready to shoot.'
-        : holdingForStable
-          ? `Keep the pose steady for ${stabilityProgress.required - stabilityProgress.current} more matched sample.`
-          : (liveFeedback?.detail ?? 'Sampled matching updates about every 1–2 seconds.')
-    : guide.kind === 'food' ? 'Use the labeled zones as placement targets.' : 'Use the lines, zones, points and frames as composition anchors.';
+  const liveDetail = cameraMountError
+    ? cameraMountError
+    : guide.kind === 'portrait'
+      ? !liveCoachEligible
+        ? 'Live Coach and Auto Capture currently support one-person targets. Use the selected overlay for duo or group composition.'
+        : liveError
+          ? liveError
+          : matchStability.stableMatched
+            ? autoCaptureEnabled
+              ? 'Stable match. Auto Capture fires once when each stable period begins.'
+              : 'Composition stayed matched across samples. Ready to shoot.'
+            : holdingForStable
+              ? `Keep the pose steady for ${stabilityProgress.required - stabilityProgress.current} more matched sample.`
+              : (liveFeedback?.detail ?? 'Sampled matching updates about every 1–2 seconds.')
+      : guide.kind === 'food' ? 'Use the labeled zones as placement targets.' : 'Use the lines, zones, points and frames as composition anchors.';
 
   return (
     <SafeAreaView style={styles.cameraSafe}>
       {analyzer}
       {liveAnalyzer}
       <StatusBar style="light" />
-      <View style={styles.cameraWrap}>
-        <CameraView ref={cameraRef} style={StyleSheet.absoluteFillObject} facing="back" onCameraReady={() => setCameraReady(true)} />
-        <GuideOverlay guide={guide} width={width} height={height} opacity={0.99} />
+      <View
+        style={styles.cameraWrap}
+        onLayout={({ nativeEvent: { layout } }) => {
+          const nextWidth = Math.max(1, layout.width);
+          const nextHeight = Math.max(1, layout.height);
+          setCameraViewport((current) => (
+            Math.abs(current.width - nextWidth) < 0.5 && Math.abs(current.height - nextHeight) < 0.5
+              ? current
+              : { width: nextWidth, height: nextHeight }
+          ));
+        }}
+      >
+        <CameraView
+          ref={cameraRef}
+          style={StyleSheet.absoluteFillObject}
+          facing="back"
+          animateShutter={false}
+          onCameraReady={() => {
+            setCameraMountError('');
+            setCameraReady(true);
+          }}
+          onMountError={(event) => {
+            invalidateLiveSession();
+            setCameraReady(false);
+            setCameraMountError(event.message || 'Camera preview could not start.');
+            setLiveError(event.message || 'Camera preview could not start.');
+            resetLiveStability();
+            liveBusyRef.current = false;
+          }}
+        />
+        <GuideOverlay guide={guide} width={cameraViewport.width} height={cameraViewport.height} opacity={0.99} />
 
         <Pressable
           style={[styles.liveBadge, matchStability.stableMatched && styles.liveBadgeMatched]}
-          onPress={() => guide.kind === 'portrait' && toggleLiveCoach()}
+          onPress={() => liveCoachEligible && toggleLiveCoach()}
+          disabled={!liveCoachEligible || Boolean(cameraMountError)}
         >
           <Text style={styles.liveBadgeText}>{matchLabel}</Text>
-          {guide.kind === 'portrait' && <Text style={styles.liveBadgeSub}>LIVE COACH · SAMPLED</Text>}
+          {liveCoachEligible && <Text style={styles.liveBadgeSub}>LIVE COACH · SAMPLED</Text>}
         </Pressable>
 
-        {guide.kind === 'portrait' && (
+        {liveCoachEligible && (
           <Pressable
             style={[
               styles.autoCaptureBadge,
               autoCaptureEnabled && styles.autoCaptureBadgeActive,
-              !liveEnabled && styles.autoCaptureBadgeDisabled,
+              (!liveEnabled || Boolean(cameraMountError)) && styles.autoCaptureBadgeDisabled,
             ]}
             onPress={toggleAutoCapture}
-            disabled={!liveEnabled}
+            disabled={!liveEnabled || Boolean(cameraMountError)}
           >
             <Text style={[styles.autoCaptureText, autoCaptureEnabled && styles.autoCaptureTextActive]}>
               AUTO {autoCaptureEnabled ? 'ON' : 'OFF'}
@@ -781,7 +835,7 @@ export default function App() {
           </View>
         )}
 
-        {liveFeedback && guide.kind === 'portrait' && (
+        {liveFeedback && liveCoachEligible && (
           <View style={styles.scoreStrip}>
             <Text style={styles.scoreItem}>POS {liveFeedback.framingScore}</Text>
             <Text style={styles.scoreItem}>SIZE {liveFeedback.scaleScore}</Text>
@@ -804,11 +858,23 @@ export default function App() {
 
         <View style={styles.cameraBottom}>
           <Pressable style={styles.cameraSideButton} onPress={leaveCamera}><Text style={styles.cameraSideText}>Guide</Text></Pressable>
-          <Pressable style={[styles.shutterOuter, matchStability.stableMatched && styles.shutterMatched]} onPress={takePhoto}>
+          <Pressable
+            style={[
+              styles.shutterOuter,
+              matchStability.stableMatched && styles.shutterMatched,
+              (!cameraReady || Boolean(cameraMountError)) && styles.shutterDisabled,
+            ]}
+            onPress={takePhoto}
+            disabled={!cameraReady || Boolean(cameraMountError)}
+          >
             <View style={styles.shutterInner} />
           </Pressable>
-          <Pressable style={styles.cameraSideButton} onPress={() => guide.kind === 'portrait' ? toggleLiveCoach() : resetTransform()}>
-            <Text style={styles.cameraSideText}>{guide.kind === 'portrait' ? (liveEnabled ? 'AI On' : 'AI Off') : 'Reset'}</Text>
+          <Pressable
+            style={styles.cameraSideButton}
+            onPress={() => liveCoachEligible ? toggleLiveCoach() : resetTransform()}
+            disabled={liveCoachEligible && Boolean(cameraMountError)}
+          >
+            <Text style={styles.cameraSideText}>{liveCoachEligible ? (liveEnabled ? 'AI On' : 'AI Off') : 'Reset'}</Text>
           </Pressable>
         </View>
       </View>
@@ -937,5 +1003,6 @@ const styles = StyleSheet.create({
   cameraSideText: { color: '#FFF', fontWeight: '800' },
   shutterOuter: { width: 78, height: 78, borderRadius: 39, borderWidth: 4, borderColor: '#FFF', alignItems: 'center', justifyContent: 'center' },
   shutterMatched: { borderColor: '#85F3A7', borderWidth: 6 },
+  shutterDisabled: { opacity: 0.35 },
   shutterInner: { width: 62, height: 62, borderRadius: 31, backgroundColor: '#F8FF61' },
 });

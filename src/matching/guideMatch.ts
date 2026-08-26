@@ -27,12 +27,44 @@ type NamedPoint = { name: string; point: NormalizedPoint };
 
 const clamp01 = (value: number) => Math.max(0, Math.min(1, value));
 
-function applyTransform(point: NormalizedPoint, guide: GuideSpec): NormalizedPoint {
-  const transform = guide.transform ?? { dx: 0, dy: 0, scale: 1 };
+/**
+ * Map a normalized source-frame point into the same aspect-fit frame used by
+ * GuideOverlay when the camera/container aspect differs from the reference.
+ */
+function fitPointToAspect(
+  point: NormalizedPoint,
+  sourceAspect?: number,
+  containerAspect?: number,
+): NormalizedPoint {
+  if (!sourceAspect || sourceAspect <= 0 || !containerAspect || containerAspect <= 0) return point;
+  if (Math.abs(sourceAspect - containerAspect) < 0.0001) return point;
+
+  if (containerAspect > sourceAspect) {
+    const frameWidth = sourceAspect / containerAspect;
+    return {
+      x: (1 - frameWidth) / 2 + point.x * frameWidth,
+      y: point.y,
+    };
+  }
+
+  const frameHeight = containerAspect / sourceAspect;
   return {
+    x: point.x,
+    y: (1 - frameHeight) / 2 + point.y * frameHeight,
+  };
+}
+
+function applyTransform(
+  point: NormalizedPoint,
+  guide: GuideSpec,
+  containerAspect?: number,
+): NormalizedPoint {
+  const transform = guide.transform ?? { dx: 0, dy: 0, scale: 1 };
+  const transformed = {
     x: ((point.x - 0.5) * transform.scale) + 0.5 + transform.dx,
     y: ((point.y - 0.5) * transform.scale) + 0.5 + transform.dy,
   };
+  return fitPointToAspect(transformed, guide.aspectRatio, containerAspect);
 }
 
 function personPoints(person: PersonGuide): NamedPoint[] {
@@ -78,6 +110,10 @@ function personPoints(person: PersonGuide): NamedPoint[] {
   return points;
 }
 
+function poseAnchorCount(person: PersonGuide): number {
+  return Object.values(person.joints ?? {}).filter(Boolean).length;
+}
+
 function boxFromPoints(points: NormalizedPoint[]): Box {
   const xs = points.map((point) => point.x);
   const ys = points.map((point) => point.y);
@@ -96,14 +132,25 @@ function boxFromPoints(points: NormalizedPoint[]): Box {
   };
 }
 
-function transformedPersonBox(guide: GuideSpec, person: PersonGuide): Box {
-  return boxFromPoints(personPoints(person).map(({ point }) => applyTransform(point, guide)));
+function transformedPersonBox(
+  guide: GuideSpec,
+  person: PersonGuide,
+  containerAspect?: number,
+): Box {
+  return boxFromPoints(personPoints(person).map(({ point }) => applyTransform(point, guide, containerAspect)));
 }
 
-function relativePoseScore(targetGuide: GuideSpec, target: PersonGuide, live: PersonGuide): { score?: number; worst?: string; dy?: number } {
-  const targetBox = transformedPersonBox(targetGuide, target);
-  const liveBox = transformedPersonBox({ ...targetGuide, transform: { dx: 0, dy: 0, scale: 1 } }, live);
-  const targetNamed = new Map(personPoints(target).map(({ name, point }) => [name, applyTransform(point, targetGuide)]));
+function relativePoseScore(
+  targetGuide: GuideSpec,
+  target: PersonGuide,
+  liveGuide: GuideSpec,
+  live: PersonGuide,
+): { score?: number; worst?: string; dy?: number } {
+  const liveAspect = liveGuide.aspectRatio ?? targetGuide.aspectRatio;
+  const targetBox = transformedPersonBox(targetGuide, target, liveAspect);
+  const liveIdentity: GuideSpec = { ...liveGuide, transform: { dx: 0, dy: 0, scale: 1 } };
+  const liveBox = transformedPersonBox(liveIdentity, live, liveAspect);
+  const targetNamed = new Map(personPoints(target).map(({ name, point }) => [name, applyTransform(point, targetGuide, liveAspect)]));
   const liveNamed = new Map(personPoints(live).map(({ name, point }) => [name, point]));
 
   const jointNames = [
@@ -156,6 +203,17 @@ function humanizeJoint(name?: string) {
 }
 
 export function scorePortraitMatch(targetGuide: GuideSpec, liveGuide: GuideSpec): MatchFeedback {
+  if (targetGuide.people.length !== 1) {
+    return {
+      score: 0,
+      framingScore: 0,
+      scaleScore: 0,
+      status: 'searching',
+      hint: 'Manual guide only',
+      detail: 'Live Coach currently supports one-person targets. Use the overlay manually for duo or group shots.',
+    };
+  }
+
   const target = targetGuide.people[0];
   const live = liveGuide.people[0];
   if (!target || !live) {
@@ -169,9 +227,13 @@ export function scorePortraitMatch(targetGuide: GuideSpec, liveGuide: GuideSpec)
     };
   }
 
-  const targetBox = transformedPersonBox(targetGuide, target);
+  // The renderer aspect-fits the reference geometry into the camera frame. The
+  // matcher must compare in that same coordinate space or a 3:4 target shown
+  // in a 9:16 camera can look aligned while still receiving wrong scale hints.
+  const liveAspect = liveGuide.aspectRatio ?? targetGuide.aspectRatio;
+  const targetBox = transformedPersonBox(targetGuide, target, liveAspect);
   const liveIdentity: GuideSpec = { ...liveGuide, transform: { dx: 0, dy: 0, scale: 1 } };
-  const liveBox = transformedPersonBox(liveIdentity, live);
+  const liveBox = transformedPersonBox(liveIdentity, live, liveAspect);
 
   const dx = liveBox.center.x - targetBox.center.x;
   const dy = liveBox.center.y - targetBox.center.y;
@@ -182,7 +244,10 @@ export function scorePortraitMatch(targetGuide: GuideSpec, liveGuide: GuideSpec)
   const scaleError = Math.abs(Math.log(Math.max(0.05, heightRatio)));
   const scaleScore = clamp01(1 - scaleError / 0.52);
 
-  const pose = relativePoseScore(targetGuide, target, live);
+  const pose = relativePoseScore(targetGuide, target, liveGuide, live);
+  // If the target itself encodes a meaningful pose, losing live pose landmarks
+  // must never silently turn matching into framing-only and unlock Auto Capture.
+  const poseRequired = poseAnchorCount(target) >= 2;
   const targetFacing = target.head.facing;
   const liveFacing = live.head.facing;
   let faceScore: number | undefined;
@@ -201,9 +266,10 @@ export function scorePortraitMatch(targetGuide: GuideSpec, liveGuide: GuideSpec)
   const rawScore = weighted.reduce((sum, [componentScore, weight]) => sum + componentScore * weight, 0) / Math.max(0.001, weightTotal);
   const score = Math.round(clamp01(rawScore) * 100);
 
+  const poseGood = poseRequired ? pose.score != null && pose.score >= 0.72 : pose.score == null || pose.score >= 0.72;
   const componentsGood = framingScore >= 0.76
     && scaleScore >= 0.76
-    && (pose.score == null || pose.score >= 0.72)
+    && poseGood
     && (faceScore == null || faceScore >= 0.80);
   const matched = score >= 86 && componentsGood;
 
@@ -225,6 +291,9 @@ export function scorePortraitMatch(targetGuide: GuideSpec, liveGuide: GuideSpec)
   } else if (targetFacing !== 'front' && targetFacing !== liveFacing) {
     hint = targetFacing === 'left' ? 'Face ← left' : 'Face → right';
     detail = 'Match the head direction from the reference.';
+  } else if (poseRequired && pose.score == null) {
+    hint = 'Show the full pose';
+    detail = 'Keep shoulders and enough arm/leg landmarks visible so the target pose can be verified.';
   } else if (pose.score != null && pose.score < 0.72 && pose.worst) {
     const joint = humanizeJoint(pose.worst);
     if (pose.dy != null && Math.abs(pose.dy) > 0.10 && pose.worst.includes('wrist')) {
