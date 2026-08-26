@@ -1,29 +1,68 @@
 # BoyFriend Photo Savior
 
-A **reference → abstract guide → live camera** MVP for Web, iOS and Android.
+A **reference → outer contour → live camera** MVP for Web, iOS and Android.
 
-The product intentionally does **not** put the whole source photo on top of the camera. It keeps only the composition information that is useful while shooting: body anchors, face direction, multiple-person relationship, or food/object zones.
+The core product rule is simple:
+
+> **If the reference contains a person, the shooting guide is an outside contour — never a pose skeleton.**
+
+Pose landmarks may still be used internally as geometry for fallback presets, but stick figures and joint lines are not rendered to the photographer.
 
 ## What works now
 
 - Expo / React Native shared UI for Web, iOS and Android
-- Built-in demo reference gallery
-  - half-body cafe pose
-  - look-back standing pose
-  - low squat
-  - two-person pose relationship
-  - three-object dessert composition
-- Simple / Outline / Pose guide rendering
-- Full-body limb anchors when the template contains them
-- Multi-person guides
-- Food/object zones and relative placement lines
-- Show reference / Guide-only preview
-- Move / scale / reset guide
+- Import your own reference image
+- Automatic one-person segmentation with MediaPipe Image Segmenter
+- Segmentation mask → simplified closed outer contour
+- Reference / Guide-only preview
+- Portrait guides render only as human outer contours
+- Built-in portrait presets use outline-only fallback geometry
+- Food references use object zones / object outlines
+- Move / scale / reset the guide
+- Source aspect ratio is preserved so the guide is not stretched on a phone screen
 - Live camera overlay
-- Face-direction flip
-- Camera capture with a captured thumbnail
-- Import your own reference image (manual guide in this MVP)
-- `PoseDetector` adapter boundary for automatic extraction next
+- Camera capture with captured thumbnail
+- Built-in demo reference gallery
+
+## Automatic portrait flow
+
+```text
+User photo
+   |
+   v
+MediaPipe person segmentation
+   |
+   v
+binary person mask
+   |
+   v
+scan outer left/right boundary
+   |
+   v
+simplified closed contour
+   |
+   v
+GuideSpec.people[0].contour
+   |
+   v
+live camera overlay
+```
+
+The current automatic extractor targets **one primary person**. Multi-person instance separation is a later milestone.
+
+## Cross-platform segmentation
+
+### Web
+
+The web build imports `@mediapipe/tasks-vision` directly and runs segmentation in the browser.
+
+### iOS / Android
+
+The Expo app runs the same MediaPipe Image Segmenter inside a tiny hidden `react-native-webview` bridge. The selected photo is provided as a local Base64 data URL; only the MediaPipe runtime/model are fetched remotely.
+
+This keeps the MVP on one React Native codebase without writing separate Swift/Kotlin segmentation bridges yet.
+
+> Current MVP requirement: internet access is needed the first time the MediaPipe WASM/model is loaded. A production build should bundle the model/runtime or replace the bridge with native MediaPipe Tasks.
 
 ## Run
 
@@ -40,7 +79,9 @@ Then:
 - press `i` for iOS simulator
 - press `a` for Android emulator
 
-For camera behavior, a physical phone is recommended.
+A physical phone is recommended for camera testing.
+
+For web camera access outside localhost, serve the build over HTTPS.
 
 ## Web export
 
@@ -48,53 +89,34 @@ For camera behavior, a physical phone is recommended.
 npm run export:web
 ```
 
-The static output is written by Expo to `dist/`.
+Expo writes the static output to `dist/`.
 
-## MVP architecture
+## Data model
 
-```text
-Reference image / built-in demo
-            |
-            v
-     Composition Guide
-   /          |          \
-Simple     Outline       Pose
-            |
-            v
-      Live Camera View
-            |
-            v
-         Capture
-```
-
-The next detector plugs into the same flow:
+Portraits may contain internal head / shoulder / joint geometry because presets need it to construct a fallback shape, but the renderer follows this rule:
 
 ```text
-User reference image
-        |
-        v
-MediaPipe / MoveNet / ML Kit
-        |
-        v
-Pose landmarks + face direction
-        |
-        v
-GuideGenerator
-        |
-        v
-GuideSpec (same UI as today)
+person.contour exists
+    -> draw the closed segmentation contour
+
+person.contour missing
+    -> derive an outer head / torso / limb envelope
+
+never
+    -> draw center-line skeletons
 ```
 
-## Demo photos
+## Built-in demo photos
 
-The built-in samples use free-to-use Unsplash photos and include photographer credit in the UI. They are only reference material for validating the guide interaction. For a packaged offline build, replace them with local licensed assets.
+The demo gallery uses Unsplash references and includes photographer credit in the UI. They are reference material for validating the shooting interaction. Replace them with local licensed assets for an offline packaged demo.
 
 ## Next milestones
 
-1. Automatic reference-photo pose extraction.
-2. Face landmarks / face yaw to set the direction arrow.
-3. Person segmentation to generate a cleaner SOVS-like contour.
-4. Live subject detection and alignment score.
-5. Auto-capture when the framing is close enough.
-6. General object segmentation for arbitrary food references.
-7. Save/share captured photos.
+1. Bundle the segmentation model/runtime for offline use.
+2. Face landmarks / face yaw for automatic look-direction guidance.
+3. Better contour smoothing and small-gap preservation around arms/legs.
+4. Multi-person instance segmentation and relationship guides.
+5. Live subject segmentation → alignment score against the target contour.
+6. Auto-capture when contour overlap is close enough.
+7. Arbitrary food/object segmentation from uploaded references.
+8. Save/share captured photos.
