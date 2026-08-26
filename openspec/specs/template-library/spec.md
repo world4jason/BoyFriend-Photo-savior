@@ -41,9 +41,9 @@ The Ghost catalog SHALL distinguish the 62-slot family-based POC reconstruction 
 - **WHEN** the POC Ghost library is loaded
 - **THEN** it contains exactly 62 generated slots across the documented public category families without claiming the internal PoseGhost ordering or per-category distribution
 
-### Requirement: Large catalogs are browsable without defaulting to every preview
-The template browser SHALL provide a narrower default view when a mode contains a large number of templates.
+### Requirement: Template browser filters by display mode
+The template browser SHALL let the user narrow the visible catalog by the four Display Modes.
 
-#### Scenario: Opening Ghost templates
-- **WHEN** the user switches the template library to Ghost and the catalog has 62 previews
-- **THEN** the browser defaults to a category subset rather than rendering all 62 previews as the initial view
+#### Scenario: Selecting Ghost in the library
+- **WHEN** the user selects the Ghost template filter
+- **THEN** the visible catalog contains Ghost-recommended templates and does not mix in Outline, Skeleton, or Guide cards
