@@ -13,6 +13,7 @@ import {
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
 import { StatusBar } from 'expo-status-bar';
+import { cleanupTemporaryUri, prepareAnalysisImage } from './src/analysis/prepareAnalysisImage';
 import { GuideOverlay } from './src/GuideOverlay';
 import { MatchFeedback, scorePortraitMatch } from './src/matching/guideMatch';
 import { SAMPLE_REFERENCES, SampleReference } from './src/sampleReferences';
@@ -32,6 +33,10 @@ const FOOD_MODES: { key: GuideMode; label: string }[] = [
 ];
 
 const cloneGuide = (guide: GuideSpec): GuideSpec => JSON.parse(JSON.stringify(guide)) as GuideSpec;
+
+const cleanupRequestFiles = (request?: OutlineAnalysisRequest | null) => {
+  request?.cleanupUris?.forEach(cleanupTemporaryUri);
+};
 
 export default function App() {
   const { width, height } = useWindowDimensions();
@@ -54,6 +59,7 @@ export default function App() {
 
   const cameraRef = useRef<CameraView | null>(null);
   const liveBusyRef = useRef(false);
+  const referencePrepareGenerationRef = useRef(0);
 
   const previewWidth = Math.min(Math.max(width - 24, 280), 620);
   const previewHeight = Math.min(height * 0.60, 680);
@@ -62,13 +68,17 @@ export default function App() {
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
       allowsEditing: false,
-      quality: 0.78,
-      base64: true,
+      quality: 1,
+      base64: false,
     });
     if (result.canceled) return;
 
     const asset = result.assets[0];
     if (!asset?.uri) return;
+
+    const prepareGeneration = ++referencePrepareGenerationRef.current;
+    cleanupRequestFiles(analysisRequest);
+    setAnalysisRequest(null);
 
     const aspectRatio = asset.width && asset.height ? asset.width / asset.height : 0.75;
     const fallback = cloneGuide(DEFAULT_GUIDE);
@@ -80,25 +90,31 @@ export default function App() {
     setActiveSample(null);
     setGuide(fallback);
     setShowReference(true);
-    setAnalysisMessage('');
+    setAnalysisStatus('analyzing');
+    setAnalysisMessage('Preparing photo for local analysis…');
     setScreen('reference');
 
-    if (!asset.base64) {
+    try {
+      const prepared = await prepareAnalysisImage(asset.uri, asset.width, asset.height, 1280, 0.74);
+
+      if (prepareGeneration !== referencePrepareGenerationRef.current) {
+        cleanupTemporaryUri(prepared.temporaryUri);
+        return;
+      }
+
+      setAnalysisRequest({
+        id: `ref-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        dataUrl: prepared.dataUrl,
+        sourceUri: asset.uri,
+        aspectRatio,
+        cleanupUris: prepared.temporaryUri ? [prepared.temporaryUri] : [],
+      });
+      setAnalysisMessage('Extracting silhouette + pose + face direction…');
+    } catch (error) {
+      if (prepareGeneration !== referencePrepareGenerationRef.current) return;
       setAnalysisStatus('error');
-      setAnalysisMessage('This device did not provide image bytes for automatic outline extraction. The editable fallback is shown instead.');
-      return;
+      setAnalysisMessage(error instanceof Error ? error.message : 'Could not prepare the reference for local analysis.');
     }
-
-    const request: OutlineAnalysisRequest = {
-      id: `ref-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-      dataUrl: `data:image/jpeg;base64,${asset.base64}`,
-      sourceUri: asset.uri,
-      aspectRatio,
-    };
-
-    setAnalysisStatus('analyzing');
-    setAnalysisMessage('Extracting silhouette + pose + face direction…');
-    setAnalysisRequest(request);
   };
 
   const onOutlineResult = (request: OutlineAnalysisRequest, detection: PersonContourDetection) => {
@@ -115,17 +131,23 @@ export default function App() {
       setAnalysisStatus('error');
       setAnalysisMessage(error instanceof Error ? error.message : 'Could not build an outer contour.');
     } finally {
+      cleanupRequestFiles(request);
       setAnalysisRequest(null);
     }
   };
 
-  const onOutlineError = (_request: OutlineAnalysisRequest, message: string) => {
+  const onOutlineError = (request: OutlineAnalysisRequest, message: string) => {
+    cleanupRequestFiles(request);
     setAnalysisStatus('error');
     setAnalysisMessage(`${message} The editable outer-contour fallback is still available.`);
     setAnalysisRequest(null);
   };
 
   const useSample = (sample: SampleReference) => {
+    referencePrepareGenerationRef.current += 1;
+    cleanupRequestFiles(analysisRequest);
+    setAnalysisRequest(null);
+
     const nextGuide = cloneGuide(sample.guide);
     nextGuide.sourceUri = sample.imageUrl;
     nextGuide.aspectRatio = nextGuide.aspectRatio ?? 0.75;
@@ -160,6 +182,11 @@ export default function App() {
   const resetTransform = () => updateTransform({ dx: 0, dy: 0, scale: 1 });
 
   const openCamera = async () => {
+    if (analysisStatus === 'analyzing') {
+      Alert.alert('Guide is still analyzing', 'Wait for the reference guide to finish before opening the camera.');
+      return;
+    }
+
     if (!permission?.granted) {
       const next = await requestPermission();
       if (!next.granted) {
@@ -176,6 +203,7 @@ export default function App() {
   };
 
   const leaveCamera = () => {
+    cleanupRequestFiles(liveRequest);
     setCameraReady(false);
     setLiveRequest(null);
     setLiveFeedback(null);
@@ -183,8 +211,29 @@ export default function App() {
     setScreen('reference');
   };
 
+  const toggleLiveCoach = () => {
+    if (liveEnabled) {
+      cleanupRequestFiles(liveRequest);
+      setLiveRequest(null);
+      setLiveFeedback(null);
+      setLiveError('');
+      liveBusyRef.current = false;
+      setLiveEnabled(false);
+      return;
+    }
+
+    setLiveEnabled(true);
+  };
+
   const takePhoto = async () => {
     if (!cameraRef.current) return;
+
+    // A real shutter press wins over the low-priority sampled analyzer. Cancel
+    // its request before capture so its cache lifetime and feedback cannot
+    // overlap the user's actual photo.
+    cleanupRequestFiles(liveRequest);
+    setLiveRequest(null);
+
     try {
       liveBusyRef.current = true;
       const photo = await cameraRef.current.takePictureAsync({ quality: 0.92 });
@@ -205,12 +254,14 @@ export default function App() {
       setLiveFeedback(null);
       setLiveError(error instanceof Error ? error.message : 'Could not match the live subject.');
     } finally {
+      cleanupRequestFiles(request);
       setLiveRequest(null);
       liveBusyRef.current = false;
     }
   };
 
-  const onLiveError = (_request: OutlineAnalysisRequest, message: string) => {
+  const onLiveError = (request: OutlineAnalysisRequest, message: string) => {
+    cleanupRequestFiles(request);
     setLiveFeedback(null);
     setLiveError(message);
     setLiveRequest(null);
@@ -225,31 +276,42 @@ export default function App() {
     const sampleFrame = async () => {
       if (cancelled || liveBusyRef.current || !cameraRef.current) return;
       liveBusyRef.current = true;
+      let sourceUri: string | null = null;
+      let preparedUri: string | null = null;
 
       try {
         const frame = await cameraRef.current.takePictureAsync({
-          quality: 0.18,
-          base64: true,
+          quality: 0.32,
           shutterSound: false,
         });
 
-        if (cancelled) {
-          liveBusyRef.current = false;
-          return;
-        }
-        if (!frame?.base64) {
+        if (!frame?.uri) {
           liveBusyRef.current = false;
           setLiveError('Live analysis frame was unavailable.');
           return;
         }
 
+        sourceUri = frame.uri;
+        const prepared = await prepareAnalysisImage(frame.uri, frame.width, frame.height, 720, 0.52);
+        preparedUri = prepared.temporaryUri ?? null;
+
+        if (cancelled) {
+          cleanupTemporaryUri(sourceUri);
+          cleanupTemporaryUri(preparedUri);
+          liveBusyRef.current = false;
+          return;
+        }
+
         setLiveRequest({
           id: `live-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-          dataUrl: `data:image/jpeg;base64,${frame.base64}`,
+          dataUrl: prepared.dataUrl,
           sourceUri: frame.uri,
           aspectRatio: frame.width && frame.height ? frame.width / frame.height : (guide.aspectRatio ?? 0.75),
+          cleanupUris: [sourceUri, preparedUri].filter((uri): uri is string => Boolean(uri)),
         });
       } catch (error) {
+        cleanupTemporaryUri(sourceUri);
+        cleanupTemporaryUri(preparedUri);
         liveBusyRef.current = false;
         if (!cancelled) setLiveError(error instanceof Error ? error.message : 'Live sampling failed.');
       }
@@ -365,6 +427,7 @@ export default function App() {
       : analysisStatus === 'error'
         ? styles.statusError
         : styles.statusWorking;
+    const isAnalyzing = analysisStatus === 'analyzing';
 
     return (
       <SafeAreaView style={styles.safe}>
@@ -390,7 +453,7 @@ export default function App() {
 
           <View style={[styles.statusCard, statusTone]}>
             <Text style={styles.statusTitle}>
-              {analysisStatus === 'analyzing'
+              {isAnalyzing
                 ? 'Analyzing reference'
                 : analysisStatus === 'ready'
                   ? 'Automatic guide ready'
@@ -418,7 +481,13 @@ export default function App() {
 
           <View style={styles.bottomActions}>
             <Pressable style={styles.secondaryButton} onPress={pickReference}><Text style={styles.secondaryText}>Choose another</Text></Pressable>
-            <Pressable style={styles.primarySmall} onPress={openCamera}><Text style={styles.primaryButtonText}>Open camera</Text></Pressable>
+            <Pressable
+              style={[styles.primarySmall, isAnalyzing && styles.primarySmallDisabled]}
+              onPress={openCamera}
+              disabled={isAnalyzing}
+            >
+              <Text style={styles.primaryButtonText}>{isAnalyzing ? 'Analyzing…' : 'Open camera'}</Text>
+            </Pressable>
           </View>
         </ScrollView>
       </SafeAreaView>
@@ -457,7 +526,7 @@ export default function App() {
 
         <Pressable
           style={[styles.liveBadge, liveFeedback?.status === 'matched' && styles.liveBadgeMatched]}
-          onPress={() => guide.kind === 'portrait' && setLiveEnabled((value) => !value)}
+          onPress={() => guide.kind === 'portrait' && toggleLiveCoach()}
         >
           <Text style={styles.liveBadgeText}>{matchLabel}</Text>
           {guide.kind === 'portrait' && <Text style={styles.liveBadgeSub}>LIVE COACH · SAMPLED</Text>}
@@ -491,7 +560,7 @@ export default function App() {
           </Pressable>
           <Pressable
             style={styles.cameraSideButton}
-            onPress={() => guide.kind === 'portrait' ? setLiveEnabled((value) => !value) : resetTransform()}
+            onPress={() => guide.kind === 'portrait' ? toggleLiveCoach() : resetTransform()}
           >
             <Text style={styles.cameraSideText}>{guide.kind === 'portrait' ? (liveEnabled ? 'AI On' : 'AI Off') : 'Reset'}</Text>
           </Pressable>
@@ -561,6 +630,7 @@ const styles = StyleSheet.create({
   secondaryButton: { flex: 1, paddingVertical: 15, borderRadius: 16, alignItems: 'center', backgroundColor: '#17191E' },
   secondaryText: { color: '#FFF', fontWeight: '800' },
   primarySmall: { flex: 1.35, paddingVertical: 15, borderRadius: 16, alignItems: 'center', backgroundColor: '#F8FF61' },
+  primarySmallDisabled: { opacity: 0.45 },
   cameraWrap: { flex: 1, overflow: 'hidden' },
   liveBadge: { position: 'absolute', top: 20, alignSelf: 'center', backgroundColor: 'rgba(0,0,0,0.72)', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 16, alignItems: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.20)' },
   liveBadgeMatched: { backgroundColor: 'rgba(29,75,45,0.88)', borderColor: '#85F3A7' },

@@ -10,6 +10,8 @@ export type OutlineAnalysisRequest = {
   dataUrl: string;
   sourceUri: string;
   aspectRatio: number;
+  /** Local cache files that can be deleted after analysis completes. */
+  cleanupUris?: string[];
 };
 
 type Props = {
