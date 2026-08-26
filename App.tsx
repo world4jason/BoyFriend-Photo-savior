@@ -18,10 +18,7 @@ import { GUIDE_PRESETS, getGuidePreset } from './src/guidePresets';
 import { GuideOverlay } from './src/GuideOverlay';
 import { MatchFeedback, scorePortraitMatch } from './src/matching/guideMatch';
 import { SAMPLE_REFERENCES, SampleReference } from './src/sampleReferences';
-import {
-  OutlineAnalysisRequest,
-  PersonOutlineAnalyzer,
-} from './src/segmentation/PersonOutlineAnalyzer';
+import { OutlineAnalysisRequest, PersonOutlineAnalyzer } from './src/segmentation/PersonOutlineAnalyzer';
 import { buildGuideFromContour, PersonContourDetection } from './src/segmentation/guideFromContour';
 import { BENCHMARK_TEMPLATES, BenchmarkTemplate } from './src/templates/benchmarkTemplates';
 import { DEFAULT_GUIDE, GuideMode, GuidePreset, GuideSpec } from './src/types';
@@ -45,6 +42,7 @@ export default function App() {
   const [referenceUri, setReferenceUri] = useState<string | null>(null);
   const [activeSample, setActiveSample] = useState<SampleReference | null>(null);
   const [activeTemplateTitle, setActiveTemplateTitle] = useState<string | null>(null);
+  const [templateMode, setTemplateMode] = useState<GuidePreset>('sovs');
   const [guide, setGuide] = useState<GuideSpec>(cloneGuide(DEFAULT_GUIDE));
   const [permission, requestPermission] = useCameraPermissions();
   const [capturedUri, setCapturedUri] = useState<string | null>(null);
@@ -68,6 +66,7 @@ export default function App() {
   const previewHeight = Math.min(height * 0.60, 680);
   const activePreset = getGuidePreset(guide.visualStyle ?? 'sovs');
   const availablePresets = GUIDE_PRESETS.filter((preset) => preset.supportedKinds.includes(guide.kind));
+  const filteredTemplates = BENCHMARK_TEMPLATES.filter((template) => template.defaultPreset === templateMode);
 
   const setGuidePreset = (preset: GuidePreset) => {
     selectedPresetRef.current = preset;
@@ -86,15 +85,14 @@ export default function App() {
     const asset = result.assets[0];
     if (!asset?.uri) return;
 
-    const prepareGeneration = ++referencePrepareGenerationRef.current;
+    const generation = ++referencePrepareGenerationRef.current;
     cleanupRequestFiles(analysisRequest);
     setAnalysisRequest(null);
 
     const aspectRatio = asset.width && asset.height ? asset.width / asset.height : 0.75;
     const fallback = cloneGuide(DEFAULT_GUIDE);
     selectedPresetRef.current = 'sovs';
-    fallback.mode = 'outline';
-    fallback.visualStyle = selectedPresetRef.current;
+    fallback.visualStyle = 'sovs';
     fallback.sourceUri = asset.uri;
     fallback.aspectRatio = aspectRatio;
 
@@ -109,11 +107,10 @@ export default function App() {
 
     try {
       const prepared = await prepareAnalysisImage(asset.uri, asset.width, asset.height, 1280, 0.74);
-      if (prepareGeneration !== referencePrepareGenerationRef.current) {
+      if (generation !== referencePrepareGenerationRef.current) {
         cleanupTemporaryUri(prepared.temporaryUri);
         return;
       }
-
       setAnalysisRequest({
         id: `ref-${Date.now()}-${Math.random().toString(36).slice(2)}`,
         dataUrl: prepared.dataUrl,
@@ -121,9 +118,9 @@ export default function App() {
         aspectRatio,
         cleanupUris: prepared.temporaryUri ? [prepared.temporaryUri] : [],
       });
-      setAnalysisMessage('Extracting silhouette + pose + face direction…');
+      setAnalysisMessage('Extracting contour + pose + face direction…');
     } catch (error) {
-      if (prepareGeneration !== referencePrepareGenerationRef.current) return;
+      if (generation !== referencePrepareGenerationRef.current) return;
       setAnalysisStatus('error');
       setAnalysisMessage(error instanceof Error ? error.message : 'Could not prepare the reference for local analysis.');
     }
@@ -132,8 +129,6 @@ export default function App() {
   const onOutlineResult = (request: OutlineAnalysisRequest, detection: PersonContourDetection) => {
     try {
       const nextGuide = buildGuideFromContour(detection, request.aspectRatio, request.sourceUri);
-      // Analysis owns geometry. Presentation is an independent user choice and
-      // may have changed while the async analyzer was running.
       nextGuide.visualStyle = selectedPresetRef.current;
       setGuide(nextGuide);
       setAnalysisStatus('ready');
@@ -141,7 +136,7 @@ export default function App() {
         detection.poseLandmarks?.length ? 'pose' : null,
         detection.faceDirection ? `face ${detection.faceDirection}` : null,
       ].filter(Boolean).join(' · ');
-      setAnalysisMessage(`Guide geometry ready · ${detection.contour.length} contour points${extras ? ` · ${extras}` : ''}`);
+      setAnalysisMessage(`Shared geometry ready · ${detection.contour.length} contour points${extras ? ` · ${extras}` : ''}`);
     } catch (error) {
       setAnalysisStatus('error');
       setAnalysisMessage(error instanceof Error ? error.message : 'Could not build a guide.');
@@ -162,7 +157,6 @@ export default function App() {
     referencePrepareGenerationRef.current += 1;
     cleanupRequestFiles(analysisRequest);
     setAnalysisRequest(null);
-
     const nextGuide = cloneGuide(sample.guide);
     nextGuide.sourceUri = sample.imageUrl;
     nextGuide.aspectRatio = nextGuide.aspectRatio ?? 0.75;
@@ -172,7 +166,7 @@ export default function App() {
     setActiveSample(sample);
     setActiveTemplateTitle(null);
     setAnalysisStatus('preset');
-    setAnalysisMessage('Template geometry ready · switch guide preset without re-analyzing');
+    setAnalysisMessage('Template geometry ready · switch display mode without re-analyzing');
     setShowReference(true);
     setScreen('reference');
   };
@@ -181,49 +175,40 @@ export default function App() {
     referencePrepareGenerationRef.current += 1;
     cleanupRequestFiles(analysisRequest);
     setAnalysisRequest(null);
-
     const nextGuide = cloneGuide(template.guide);
-    selectedPresetRef.current = nextGuide.visualStyle ?? template.defaultPreset;
+    selectedPresetRef.current = template.defaultPreset;
+    nextGuide.visualStyle = template.defaultPreset;
     setGuide(nextGuide);
     setReferenceUri(null);
     setActiveSample(null);
     setActiveTemplateTitle(template.title);
     setAnalysisStatus('preset');
-    setAnalysisMessage(`${template.inspiredBy}-inspired vector seed · our own guide geometry`);
+    setAnalysisMessage(`${template.inspiredBy}-inspired pattern · recreated as our own normalized geometry`);
     setShowReference(false);
     setScreen('reference');
   };
 
   const updateTransform = (patch: Partial<GuideSpec['transform']>) => {
-    setGuide((current) => ({
-      ...current,
-      transform: { ...current.transform, ...patch },
-    }));
+    setGuide((current) => ({ ...current, transform: { ...current.transform, ...patch } }));
   };
-
-  const shiftGuide = (dx: number, dy: number) => {
-    updateTransform({
-      dx: Math.max(-0.35, Math.min(0.35, guide.transform.dx + dx)),
-      dy: Math.max(-0.35, Math.min(0.35, guide.transform.dy + dy)),
-    });
-  };
-
-  const scaleGuide = (factor: number) => {
-    updateTransform({ scale: Math.max(0.55, Math.min(1.65, guide.transform.scale * factor)) });
-  };
-
+  const shiftGuide = (dx: number, dy: number) => updateTransform({
+    dx: Math.max(-0.35, Math.min(0.35, guide.transform.dx + dx)),
+    dy: Math.max(-0.35, Math.min(0.35, guide.transform.dy + dy)),
+  });
+  const scaleGuide = (factor: number) => updateTransform({
+    scale: Math.max(0.55, Math.min(1.65, guide.transform.scale * factor)),
+  });
   const resetTransform = () => updateTransform({ dx: 0, dy: 0, scale: 1 });
 
   const openCamera = async () => {
     if (analysisStatus === 'analyzing') {
-      Alert.alert('Guide is still analyzing', 'Wait for the reference guide to finish before opening the camera.');
+      Alert.alert('Guide is still analyzing', 'Wait for the shared geometry to finish before opening the camera.');
       return;
     }
-
     if (!permission?.granted) {
       const next = await requestPermission();
       if (!next.granted) {
-        Alert.alert('Camera permission required', 'Camera access is needed to line up the live subject with the guide.');
+        Alert.alert('Camera permission required', 'Camera access is needed to line up the shot with the guide.');
         return;
       }
     }
@@ -261,7 +246,6 @@ export default function App() {
     if (!cameraRef.current) return;
     cleanupRequestFiles(liveRequest);
     setLiveRequest(null);
-
     try {
       liveBusyRef.current = true;
       const photo = await cameraRef.current.takePictureAsync({ quality: 0.92 });
@@ -298,14 +282,12 @@ export default function App() {
 
   useEffect(() => {
     if (screen !== 'camera' || !cameraReady || !liveEnabled || guide.kind !== 'portrait') return;
-
     let cancelled = false;
     const sampleFrame = async () => {
       if (cancelled || liveBusyRef.current || !cameraRef.current) return;
       liveBusyRef.current = true;
       let sourceUri: string | null = null;
       let preparedUri: string | null = null;
-
       try {
         const frame = await cameraRef.current.takePictureAsync({ quality: 0.32, shutterSound: false });
         if (!frame?.uri) {
@@ -313,18 +295,15 @@ export default function App() {
           setLiveError('Live analysis frame was unavailable.');
           return;
         }
-
         sourceUri = frame.uri;
         const prepared = await prepareAnalysisImage(frame.uri, frame.width, frame.height, 720, 0.52);
         preparedUri = prepared.temporaryUri ?? null;
-
         if (cancelled) {
           cleanupTemporaryUri(sourceUri);
           cleanupTemporaryUri(preparedUri);
           liveBusyRef.current = false;
           return;
         }
-
         setLiveRequest({
           id: `live-${Date.now()}-${Math.random().toString(36).slice(2)}`,
           dataUrl: prepared.dataUrl,
@@ -339,7 +318,6 @@ export default function App() {
         if (!cancelled) setLiveError(error instanceof Error ? error.message : 'Live sampling failed.');
       }
     };
-
     const first = setTimeout(sampleFrame, 700);
     const timer = setInterval(sampleFrame, 1700);
     return () => {
@@ -349,16 +327,12 @@ export default function App() {
     };
   }, [screen, cameraReady, liveEnabled, guide.kind, guide.aspectRatio, guide.transform.dx, guide.transform.dy, guide.transform.scale]);
 
-  const analyzer = (
-    <PersonOutlineAnalyzer request={analysisRequest} onResult={onOutlineResult} onError={onOutlineError} />
-  );
-  const liveAnalyzer = (
-    <PersonOutlineAnalyzer request={liveRequest} onResult={onLiveResult} onError={onLiveError} />
-  );
+  const analyzer = <PersonOutlineAnalyzer request={analysisRequest} onResult={onOutlineResult} onError={onOutlineError} />;
+  const liveAnalyzer = <PersonOutlineAnalyzer request={liveRequest} onResult={onLiveResult} onError={onLiveError} />;
 
-  const presetSelector = (
+  const modeSelector = (
     <View style={styles.presetBlock}>
-      <Text style={styles.presetHeading}>GUIDE PRESET</Text>
+      <Text style={styles.presetHeading}>DISPLAY MODE</Text>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.presetRow}>
         {availablePresets.map((preset) => {
           const active = (guide.visualStyle ?? 'sovs') === preset.key;
@@ -369,7 +343,7 @@ export default function App() {
               style={[styles.presetButton, active && styles.presetButtonActive]}
             >
               <Text style={[styles.presetShort, active && styles.presetShortActive]}>{preset.shortLabel}</Text>
-              <Text style={[styles.presetBrand, active && styles.presetBrandActive]}>{preset.label}</Text>
+              <Text style={[styles.presetBrand, active && styles.presetBrandActive]}>{preset.benchmarkLabel}</Text>
             </Pressable>
           );
         })}
@@ -380,7 +354,7 @@ export default function App() {
 
   const adjustmentControls = (
     <View style={styles.controlPanel}>
-      {presetSelector}
+      {modeSelector}
       {guide.kind === 'food' && (
         <View style={styles.modeRow}>
           {FOOD_MODES.map((mode) => (
@@ -413,8 +387,8 @@ export default function App() {
         <StatusBar style="light" />
         <ScrollView contentContainerStyle={styles.homeContent}>
           <Text style={styles.eyebrow}>BOYFRIEND PHOTO SAVIOR · MVP</Text>
-          <Text style={styles.hero}>One reference. Four ways to guide the shot.</Text>
-          <Text style={styles.subhead}>Analyze the reference once, then switch between Outline, Skeleton, Ghost and Composition Guide without changing the underlying photo geometry.</Text>
+          <Text style={styles.hero}>One shot. Four display modes.</Text>
+          <Text style={styles.subhead}>Outline, Skeleton, Ghost and Guide are how we show a shot. Templates are the actual pose or composition you want to recreate.</Text>
 
           <Pressable style={styles.primaryButton} onPress={pickReference}>
             <Text style={styles.primaryButtonText}>Use my reference photo</Text>
@@ -422,9 +396,8 @@ export default function App() {
 
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Instant photo examples</Text>
-            <Text style={styles.sectionCaption}>Openly licensed reference photos with preset guide geometry.</Text>
+            <Text style={styles.sectionCaption}>Openly licensed reference photos with reusable guide geometry.</Text>
           </View>
-
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.sampleRow}>
             {SAMPLE_REFERENCES.map((sample) => (
               <Pressable key={sample.id} style={styles.sampleCard} onPress={() => useSample(sample)}>
@@ -440,17 +413,32 @@ export default function App() {
           </ScrollView>
 
           <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Vector template library</Text>
-            <Text style={styles.sectionCaption}>Benchmark-inspired patterns redrawn as our own vector guides; no commercial pose artwork is copied.</Text>
+            <Text style={styles.sectionTitle}>Template library</Text>
+            <Text style={styles.sectionCaption}>Public benchmark patterns recreated as our own normalized vector geometry.</Text>
           </View>
-
+          <View style={styles.templateFilterRow}>
+            {GUIDE_PRESETS.map((preset) => {
+              const active = templateMode === preset.key;
+              const count = BENCHMARK_TEMPLATES.filter((template) => template.defaultPreset === preset.key).length;
+              return (
+                <Pressable
+                  key={preset.key}
+                  onPress={() => setTemplateMode(preset.key)}
+                  style={[styles.templateFilter, active && styles.templateFilterActive]}
+                >
+                  <Text style={[styles.templateFilterText, active && styles.templateFilterTextActive]}>{preset.shortLabel}</Text>
+                  <Text style={[styles.templateFilterCount, active && styles.templateFilterCountActive]}>{count}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.templateRow}>
-            {BENCHMARK_TEMPLATES.map((template) => (
+            {filteredTemplates.map((template) => (
               <Pressable key={template.id} style={styles.templateCard} onPress={() => useBenchmarkTemplate(template)}>
                 <View style={styles.templatePreview}>
                   <GuideOverlay guide={template.guide} width={150} height={200} opacity={0.96} />
                 </View>
-                <Text style={styles.templateSource}>{template.inspiredBy}</Text>
+                <Text style={styles.templateSource}>{getGuidePreset(template.defaultPreset).shortLabel} · {template.inspiredBy}</Text>
                 <Text style={styles.templateTitle}>{template.title}</Text>
                 <Text style={styles.templateCategory}>{template.category}</Text>
               </Pressable>
@@ -459,10 +447,10 @@ export default function App() {
 
           <View style={styles.howCard}>
             <View style={styles.howStep}><Text style={styles.howNumber}>1</Text><Text style={styles.howText}>Import a photo or choose a template.</Text></View>
-            <View style={styles.howStep}><Text style={styles.howNumber}>2</Text><Text style={styles.howText}>Keep one shared geometry model: contour, joints, face and composition anchors.</Text></View>
-            <View style={styles.howStep}><Text style={styles.howNumber}>3</Text><Text style={styles.howText}>Switch renderer depending on how much visual help the photographer wants.</Text></View>
+            <View style={styles.howStep}><Text style={styles.howNumber}>2</Text><Text style={styles.howText}>Keep one shared geometry model: contour, joints, objects and composition annotations.</Text></View>
+            <View style={styles.howStep}><Text style={styles.howNumber}>3</Text><Text style={styles.howText}>Choose Outline, Skeleton, Ghost or Guide depending on the shot.</Text></View>
           </View>
-          <Text style={styles.note}>Portrait extraction currently targets one primary person. Multi-person automatic instance separation comes later.</Text>
+          <Text style={styles.note}>Commercial app screenshots are research references only; shipped templates use our own geometry.</Text>
         </ScrollView>
       </SafeAreaView>
     );
@@ -471,11 +459,8 @@ export default function App() {
   if (screen === 'reference') {
     const statusTone = analysisStatus === 'ready' || analysisStatus === 'preset'
       ? styles.statusReady
-      : analysisStatus === 'error'
-        ? styles.statusError
-        : styles.statusWorking;
+      : analysisStatus === 'error' ? styles.statusError : styles.statusWorking;
     const isAnalyzing = analysisStatus === 'analyzing';
-
     return (
       <SafeAreaView style={styles.safe}>
         {analyzer}
@@ -487,46 +472,27 @@ export default function App() {
             <Text style={[styles.back, !referenceUri && styles.backDisabled]}>{showReference && referenceUri ? 'Guide only' : referenceUri ? 'Show photo' : 'Vector'}</Text>
           </Pressable>
         </View>
-
         <ScrollView contentContainerStyle={styles.referenceContent}>
           <View style={[styles.preview, { width: previewWidth, height: previewHeight }]}>
-            {referenceUri && showReference && (
-              <Image source={{ uri: referenceUri }} resizeMode="contain" style={StyleSheet.absoluteFillObject} />
-            )}
+            {referenceUri && showReference && <Image source={{ uri: referenceUri }} resizeMode="contain" style={StyleSheet.absoluteFillObject} />}
             {showReference && referenceUri && <View style={styles.referenceShade} />}
             <GuideOverlay guide={guide} width={previewWidth} height={previewHeight} />
             {(!showReference || !referenceUri) && <View style={styles.guideOnlyLabel}><Text style={styles.guideOnlyText}>GUIDE ONLY</Text></View>}
           </View>
-
           <View style={[styles.statusCard, statusTone]}>
             <Text style={styles.statusTitle}>
-              {isAnalyzing
-                ? 'Analyzing reference'
-                : analysisStatus === 'ready'
-                  ? 'Automatic geometry ready'
-                  : analysisStatus === 'error'
-                    ? 'Automatic guide unavailable'
-                    : analysisStatus === 'preset'
-                      ? 'Template geometry ready'
-                      : 'Guide'}
+              {isAnalyzing ? 'Analyzing reference' : analysisStatus === 'ready' ? 'Shared geometry ready' : analysisStatus === 'error' ? 'Automatic guide unavailable' : 'Template ready'}
             </Text>
-            <Text style={styles.statusText}>{analysisMessage || 'Choose how the same geometry should be shown.'}</Text>
+            <Text style={styles.statusText}>{analysisMessage || 'Choose how the geometry should be shown.'}</Text>
           </View>
-
           <View style={styles.referenceMeta}>
-            <Text style={styles.referenceMetaTitle}>{activePreset.label} · {activePreset.shortLabel}</Text>
-            <Text style={styles.referenceMetaText}>{activePreset.description}</Text>
+            <Text style={styles.referenceMetaTitle}>{activePreset.shortLabel}</Text>
+            <Text style={styles.referenceMetaText}>{activePreset.description} · Inspired by {activePreset.benchmarkLabel}.</Text>
           </View>
-
           {adjustmentControls}
-
           <View style={styles.bottomActions}>
             <Pressable style={styles.secondaryButton} onPress={pickReference}><Text style={styles.secondaryText}>Choose photo</Text></Pressable>
-            <Pressable
-              style={[styles.primarySmall, isAnalyzing && styles.primarySmallDisabled]}
-              onPress={openCamera}
-              disabled={isAnalyzing}
-            >
+            <Pressable style={[styles.primarySmall, isAnalyzing && styles.primarySmallDisabled]} onPress={openCamera} disabled={isAnalyzing}>
               <Text style={styles.primaryButtonText}>{isAnalyzing ? 'Analyzing…' : 'Open camera'}</Text>
             </Pressable>
           </View>
@@ -536,20 +502,16 @@ export default function App() {
   }
 
   const matchLabel = guide.kind === 'portrait'
-    ? liveFeedback
-      ? `${liveFeedback.score}% · ${liveFeedback.status.toUpperCase()}`
-      : liveEnabled
-        ? 'SCANNING…'
-        : 'LIVE COACH OFF'
-    : 'MATCH OBJECT ZONES';
+    ? liveFeedback ? `${liveFeedback.score}% · ${liveFeedback.status.toUpperCase()}` : liveEnabled ? 'SCANNING…' : 'LIVE COACH OFF'
+    : guide.kind === 'food' ? 'MATCH OBJECT GUIDE' : 'MATCH COMPOSITION GUIDE';
 
-  const liveHint = guide.kind === 'food'
-    ? 'Match size + spacing. Ignore styling details.'
-    : liveFeedback?.hint ?? (liveError ? 'Find the subject again' : 'Hold one person clearly inside the camera view.');
+  const liveHint = guide.kind === 'portrait'
+    ? (liveFeedback?.hint ?? (liveError ? 'Find the subject again' : 'Hold one person clearly inside the camera view.'))
+    : guide.kind === 'food' ? 'Match object size + spacing' : 'Line the scene up with the guide';
 
-  const liveDetail = guide.kind === 'food'
-    ? 'Food live detection is the next matcher.'
-    : liveFeedback?.detail ?? liveError ?? 'Sampled matching updates about every 1–2 seconds.';
+  const liveDetail = guide.kind === 'portrait'
+    ? (liveFeedback?.detail ?? liveError ?? 'Sampled matching updates about every 1–2 seconds.')
+    : guide.kind === 'food' ? 'Use the labeled zones as placement targets.' : 'Use the lines, zones, points and frames as composition anchors.';
 
   return (
     <SafeAreaView style={styles.cameraSafe}>
@@ -557,12 +519,7 @@ export default function App() {
       {liveAnalyzer}
       <StatusBar style="light" />
       <View style={styles.cameraWrap}>
-        <CameraView
-          ref={cameraRef}
-          style={StyleSheet.absoluteFillObject}
-          facing="back"
-          onCameraReady={() => setCameraReady(true)}
-        />
+        <CameraView ref={cameraRef} style={StyleSheet.absoluteFillObject} facing="back" onCameraReady={() => setCameraReady(true)} />
         <GuideOverlay guide={guide} width={width} height={height} opacity={0.99} />
 
         <Pressable
@@ -579,11 +536,7 @@ export default function App() {
               {availablePresets.map((preset) => {
                 const active = (guide.visualStyle ?? 'sovs') === preset.key;
                 return (
-                  <Pressable
-                    key={preset.key}
-                    onPress={() => setGuidePreset(preset.key)}
-                    style={[styles.cameraPresetButton, active && styles.cameraPresetButtonActive]}
-                  >
+                  <Pressable key={preset.key} onPress={() => setGuidePreset(preset.key)} style={[styles.cameraPresetButton, active && styles.cameraPresetButtonActive]}>
                     <Text style={[styles.cameraPresetText, active && styles.cameraPresetTextActive]}>{preset.shortLabel}</Text>
                   </Pressable>
                 );
@@ -618,10 +571,7 @@ export default function App() {
           <Pressable style={[styles.shutterOuter, liveFeedback?.status === 'matched' && styles.shutterMatched]} onPress={takePhoto}>
             <View style={styles.shutterInner} />
           </Pressable>
-          <Pressable
-            style={styles.cameraSideButton}
-            onPress={() => guide.kind === 'portrait' ? toggleLiveCoach() : resetTransform()}
-          >
+          <Pressable style={styles.cameraSideButton} onPress={() => guide.kind === 'portrait' ? toggleLiveCoach() : resetTransform()}>
             <Text style={styles.cameraSideText}>{guide.kind === 'portrait' ? (liveEnabled ? 'AI On' : 'AI Off') : 'Reset'}</Text>
           </Pressable>
         </View>
@@ -636,7 +586,7 @@ const styles = StyleSheet.create({
   homeContent: { paddingHorizontal: 20, paddingTop: 54, paddingBottom: 44, alignItems: 'center' },
   eyebrow: { color: '#F8FF61', fontSize: 12, fontWeight: '900', letterSpacing: 1.6 },
   hero: { color: '#FFF', fontSize: 42, lineHeight: 45, fontWeight: '900', textAlign: 'center', maxWidth: 650, marginTop: 14 },
-  subhead: { color: '#A7ABB4', fontSize: 16, lineHeight: 24, textAlign: 'center', maxWidth: 590, marginTop: 14 },
+  subhead: { color: '#A7ABB4', fontSize: 16, lineHeight: 24, textAlign: 'center', maxWidth: 620, marginTop: 14 },
   primaryButton: { backgroundColor: '#F8FF61', paddingVertical: 16, paddingHorizontal: 28, borderRadius: 18, minWidth: 260, alignItems: 'center', marginTop: 24 },
   primaryButtonText: { color: '#111315', fontSize: 15, fontWeight: '900' },
   sectionHeader: { width: '100%', maxWidth: 920, marginTop: 38, marginBottom: 14 },
@@ -650,6 +600,13 @@ const styles = StyleSheet.create({
   sampleTag: { color: '#F8FF61', fontSize: 9, fontWeight: '900', letterSpacing: 0.8 },
   sampleTitle: { color: '#FFF', fontSize: 21, fontWeight: '900', marginTop: 4 },
   sampleCredit: { color: '#C3C6CC', fontSize: 9, marginTop: 5 },
+  templateFilterRow: { width: '100%', maxWidth: 920, flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 },
+  templateFilter: { minWidth: 92, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8, paddingHorizontal: 13, paddingVertical: 10, borderRadius: 14, backgroundColor: '#17191E', borderWidth: 1, borderColor: '#2B2F36' },
+  templateFilterActive: { backgroundColor: '#F8FF61', borderColor: '#F8FF61' },
+  templateFilterText: { color: '#FFF', fontSize: 12, fontWeight: '900' },
+  templateFilterTextActive: { color: '#111315' },
+  templateFilterCount: { color: '#747983', fontSize: 10, fontWeight: '900' },
+  templateFilterCountActive: { color: '#4D5117' },
   templateRow: { gap: 12, paddingHorizontal: 2, paddingBottom: 4 },
   templateCard: { width: 174, minHeight: 286, borderRadius: 20, padding: 11, backgroundColor: '#14161A', borderWidth: 1, borderColor: '#292D34' },
   templatePreview: { width: 150, height: 200, borderRadius: 14, overflow: 'hidden', alignSelf: 'center', backgroundColor: '#08090A' },
