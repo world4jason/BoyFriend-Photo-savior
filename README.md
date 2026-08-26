@@ -1,19 +1,22 @@
 # BoyFriend Photo Savior
 
-A **reference → outer contour → live camera** MVP for Web, iOS and Android.
+A **reference → abstract human guide → live camera** MVP for Web, iOS and Android.
 
-The core product rule is simple:
+The core product rule is:
 
 > **If the reference contains a person, the shooting guide is an outside contour — never a pose skeleton.**
 
-Pose landmarks may still be used internally as geometry for fallback presets, but stick figures and joint lines are not rendered to the photographer.
+MediaPipe Pose Landmarker is used only as hidden geometry to improve head, shoulder, hand, hip, knee, ankle and face-direction estimates.
 
 ## What works now
 
 - Expo / React Native shared UI for Web, iOS and Android
 - Import your own reference image
 - Automatic one-person segmentation with MediaPipe Image Segmenter
+- Automatic 33-point pose analysis with MediaPipe Pose Landmarker
 - Segmentation mask → simplified closed outer contour
+- Pose landmarks → hidden geometry that improves framing metadata and fallback anchors
+- Automatic rough face/look direction from pose face landmarks
 - Reference / Guide-only preview
 - Portrait guides render only as human outer contours
 - Built-in portrait presets use outline-only fallback geometry
@@ -22,47 +25,46 @@ Pose landmarks may still be used internally as geometry for fallback presets, bu
 - Source aspect ratio is preserved so the guide is not stretched on a phone screen
 - Live camera overlay
 - Camera capture with captured thumbnail
-- Built-in demo reference gallery
+- Built-in demo reference gallery and four rendering-style benchmarks
 
 ## Automatic portrait flow
 
 ```text
 User photo
    |
-   v
-MediaPipe person segmentation
+   +----------------------+
+   |                      |
+   v                      v
+MediaPipe              MediaPipe
+Image Segmenter        Pose Landmarker
+   |                      |
+   v                      v
+person mask            hidden landmarks
+   |                      |
+   v                      |
+outer contour <-----------+
    |
    v
-binary person mask
+GuideSpec.people[0]
    |
    v
-scan outer left/right boundary
-   |
-   v
-simplified closed contour
-   |
-   v
-GuideSpec.people[0].contour
-   |
-   v
-live camera overlay
+SOVS-like live camera overlay
 ```
+
+The photographer sees the **outside line**, not the skeleton.
 
 The current automatic extractor targets **one primary person**. Multi-person instance separation is a later milestone.
 
-## Cross-platform segmentation
+## One analyzer across Web / iOS / Android
 
-### Web
+The MediaPipe implementation lives in `src/segmentation/PersonAnalyzerDom.tsx` as an Expo **DOM Component**.
 
-The web build imports `@mediapipe/tasks-vision` directly and runs segmentation in the browser.
+- **Web:** it executes as normal browser DOM.
+- **iOS / Android:** Expo SDK 57 automatically hosts the same DOM component in its built-in `@expo/dom-webview` bridge.
 
-### iOS / Android
+This keeps one MediaPipe implementation instead of maintaining JavaScript + Swift + Kotlin versions during MVP development.
 
-The Expo app runs the same MediaPipe Image Segmenter inside a tiny hidden `react-native-webview` bridge. The selected photo is provided as a local Base64 data URL; only the MediaPipe runtime/model are fetched remotely.
-
-This keeps the MVP on one React Native codebase without writing separate Swift/Kotlin segmentation bridges yet.
-
-> Current MVP requirement: internet access is needed the first time the MediaPipe WASM/model is loaded. A production build should bundle the model/runtime or replace the bridge with native MediaPipe Tasks.
+The selected photo stays local to the app/browser. The current MVP fetches the MediaPipe WASM runtime and model files from their public hosting URLs, so first use requires network access. A packaged production build should bundle those assets or move inference to native MediaPipe Tasks.
 
 ## Run
 
@@ -91,19 +93,29 @@ npm run export:web
 
 Expo writes the static output to `dist/`.
 
-## Data model
+## CI
 
-Portraits may contain internal head / shoulder / joint geometry because presets need it to construct a fallback shape, but the renderer follows this rule:
+`.github/workflows/ci.yml` is configured to run:
+
+```text
+npm install
+npm run typecheck
+npm run export:web
+```
+
+on every push / pull request. If the GitHub account cannot allocate a hosted Actions runner, the workflow can fail before any step starts; that is an account/runner issue rather than an application test result.
+
+## Data model
 
 ```text
 person.contour exists
     -> draw the closed segmentation contour
 
 person.contour missing
-    -> derive an outer head / torso / limb envelope
+    -> derive an outer body envelope from hidden pose geometry
 
 never
-    -> draw center-line skeletons
+    -> render center-line stick skeletons to the photographer
 ```
 
 ## Built-in demo photos
@@ -112,11 +124,10 @@ The demo gallery uses Unsplash references and includes photographer credit in th
 
 ## Next milestones
 
-1. Bundle the segmentation model/runtime for offline use.
-2. Face landmarks / face yaw for automatic look-direction guidance.
-3. Better contour smoothing and small-gap preservation around arms/legs.
-4. Multi-person instance segmentation and relationship guides.
-5. Live subject segmentation → alignment score against the target contour.
-6. Auto-capture when contour overlap is close enough.
-7. Arbitrary food/object segmentation from uploaded references.
-8. Save/share captured photos.
+1. Better contour tracing/smoothing around separated arms and legs.
+2. Multi-person instance segmentation and relationship guides.
+3. Live subject segmentation → overlap/alignment score against the target contour.
+4. Auto-capture when contour overlap is close enough.
+5. Arbitrary food/object segmentation from uploaded references.
+6. Bundle MediaPipe models/runtime for offline use.
+7. Save/share captured photos.
