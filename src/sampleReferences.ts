@@ -134,9 +134,9 @@ const BASE_REFERENCES: SampleReference[] = [
 ];
 
 const STYLE_NAMES: { key: GuideVisualStyle; title: string; tag: string }[] = [
-  { key: 'poseoverlay', title: 'PoseOverlay-like', tag: 'BENCHMARK · PRECISE CONTOUR' },
-  { key: 'poseghost', title: 'Poseghost-like', tag: 'BENCHMARK · GHOST SILHOUETTE' },
-  { key: 'sovs', title: 'SOVS-like', tag: 'BENCHMARK · STEP-IN OUTLINE' },
+  { key: 'sovs', title: 'SOVS-like', tag: 'BENCHMARK · OUTLINE / SILHOUETTE' },
+  { key: 'poseoverlay', title: 'PoseOverlay-like', tag: 'BENCHMARK · SKELETON MATCH' },
+  { key: 'poseghost', title: 'PoseGhost-like', tag: 'BENCHMARK · GHOST SILHOUETTE' },
   { key: 'recompose', title: 'reCompose-like', tag: 'BENCHMARK · COMPOSITION GUIDE' },
 ];
 
