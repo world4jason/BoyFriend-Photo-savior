@@ -22,6 +22,18 @@ const WASM_URL = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22/w
 
 let webSegmenterPromise: Promise<any> | null = null;
 
+/**
+ * Expo ImagePicker documents `base64` as JPEG data. Some platforms still report
+ * the selected asset's original MIME type (for example PNG/HEIC), so normalize
+ * the data URL before passing it to browser decoders.
+ */
+function normalizePickerDataUrl(dataUrl: string) {
+  if (!dataUrl.startsWith('data:')) return dataUrl;
+  const comma = dataUrl.indexOf(',');
+  if (comma < 0) return dataUrl;
+  return `data:image/jpeg;base64,${dataUrl.slice(comma + 1)}`;
+}
+
 const simplifySide = (points: NormalizedPoint[]) => {
   if (points.length <= 44) return points;
   const step = Math.max(1, Math.ceil(points.length / 44));
@@ -58,13 +70,8 @@ export function maskToOuterContour(mask: ArrayLike<number>, width: number, heigh
     throw new Error('No clear person silhouette was found in this photo.');
   }
 
-  const contour = [
-    ...simplifySide(left),
-    ...simplifySide(right).reverse(),
-  ];
-
   return {
-    contour,
+    contour: [...simplifySide(left), ...simplifySide(right).reverse()],
     maskWidth: width,
     maskHeight: height,
     foregroundRatio: foreground / Math.max(1, width * height),
@@ -102,7 +109,7 @@ async function analyzeOnWeb(request: OutlineAnalysisRequest): Promise<PersonCont
   if (!ImageCtor) throw new Error('Browser image decoding is unavailable.');
 
   const image = new ImageCtor();
-  image.src = request.dataUrl;
+  image.src = normalizePickerDataUrl(request.dataUrl);
   if (typeof image.decode === 'function') await image.decode();
   else await new Promise<void>((resolve, reject) => {
     image.onload = () => resolve();
@@ -130,7 +137,7 @@ async function analyzeOnWeb(request: OutlineAnalysisRequest): Promise<PersonCont
 }
 
 function nativeHtml(dataUrl: string) {
-  const safeDataUrl = JSON.stringify(dataUrl);
+  const safeDataUrl = JSON.stringify(normalizePickerDataUrl(dataUrl));
   return `<!doctype html>
 <html>
 <head><meta name="viewport" content="width=device-width,initial-scale=1" /></head>
