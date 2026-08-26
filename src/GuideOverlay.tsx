@@ -2,19 +2,83 @@ import React from 'react';
 import Svg, { Circle, Ellipse, Line, Path, Rect, Text as SvgText } from 'react-native-svg';
 import { GuideSpec, NormalizedPoint, PersonGuide } from './types';
 
+export type GuideVisualStyle = 'poseoverlay' | 'poseghost' | 'sovs' | 'recompose';
+
 type Props = {
   guide: GuideSpec;
   width: number;
   height: number;
   opacity?: number;
+  visualStyle?: GuideVisualStyle;
 };
-
-const GUIDE = '#F8FF61';
-const WHITE = '#FFFFFF';
 
 type PixelPoint = { x: number; y: number };
 
-export function GuideOverlay({ guide, width, height, opacity = 0.94 }: Props) {
+type VisualConfig = {
+  stroke: string;
+  secondary: string;
+  strokeWidth: number;
+  fillOpacity: number;
+  dash?: string;
+  showGrid: boolean;
+  showFrame: boolean;
+  showFaceDirection: boolean;
+  glowWidth?: number;
+};
+
+const VISUALS: Record<GuideVisualStyle, VisualConfig> = {
+  // Precision-first: strong, high-contrast contour.
+  poseoverlay: {
+    stroke: '#F8FF61',
+    secondary: '#FFFFFF',
+    strokeWidth: 4.5,
+    fillOpacity: 0.018,
+    showGrid: true,
+    showFrame: true,
+    showFaceDirection: true,
+  },
+  // Ghost-like: quiet translucent silhouette with a soft outer edge.
+  poseghost: {
+    stroke: '#FFFFFF',
+    secondary: '#FFFFFF',
+    strokeWidth: 3,
+    fillOpacity: 0.10,
+    showGrid: false,
+    showFrame: false,
+    showFaceDirection: false,
+    glowWidth: 8,
+  },
+  // SOVS-like: minimal silhouette intended for a person to physically step into.
+  sovs: {
+    stroke: '#FFFFFF',
+    secondary: '#FFFFFF',
+    strokeWidth: 6,
+    fillOpacity: 0,
+    showGrid: false,
+    showFrame: false,
+    showFaceDirection: false,
+  },
+  // reCompose-like: contour plus light composition placement structure.
+  recompose: {
+    stroke: '#F8FF61',
+    secondary: '#FFFFFF',
+    strokeWidth: 3.5,
+    fillOpacity: 0.035,
+    dash: '12 8',
+    showGrid: true,
+    showFrame: true,
+    showFaceDirection: true,
+  },
+};
+
+export function GuideOverlay({
+  guide,
+  width,
+  height,
+  opacity = 0.94,
+  visualStyle = 'sovs',
+}: Props) {
+  const visual = VISUALS[visualStyle];
   const transform = guide.transform ?? { dx: 0, dy: 0, scale: 1 };
   const targetAspect = guide.aspectRatio && guide.aspectRatio > 0 ? guide.aspectRatio : 0.75;
   const containerAspect = width / Math.max(1, height);
@@ -29,6 +93,13 @@ export function GuideOverlay({ guide, width, height, opacity = 0.94 }: Props) {
   const ry = (r: number) => r * frame.height * transform.scale;
   const point = (p?: NormalizedPoint): PixelPoint | null => p ? { x: tx(p.x), y: ty(p.y) } : null;
 
+  const contourPath = (contour: NormalizedPoint[]) => {
+    if (contour.length < 3) return '';
+    return contour.map((p, index) => `${index === 0 ? 'M' : 'L'} ${tx(p.x)} ${ty(p.y)}`).join(' ') + ' Z';
+  };
+
+  // Fallback presets may be derived from internal joints, but the user only sees tubes / envelopes,
+  // never a skeleton centre-line.
   const renderTubeSegment = (
     a: NormalizedPoint | undefined,
     b: NormalizedPoint | undefined,
@@ -45,32 +116,27 @@ export function GuideOverlay({ guide, width, height, opacity = 0.94 }: Props) {
     const radius = Math.max(4, Math.min(11, frame.width * 0.014)) * transform.scale * radiusScale;
     const ox = (-dy / length) * radius;
     const oy = (dx / length) * radius;
-    const dash = guide.mode === 'simple' ? '10 8' : undefined;
 
     return (
       <React.Fragment key={key}>
         <Line
           x1={pa.x + ox} y1={pa.y + oy} x2={pb.x + ox} y2={pb.y + oy}
-          stroke={GUIDE} strokeWidth={3.5} strokeLinecap="round" strokeOpacity={opacity} strokeDasharray={dash}
+          stroke={visual.stroke} strokeWidth={visual.strokeWidth * 0.78}
+          strokeLinecap="round" strokeOpacity={opacity} strokeDasharray={visual.dash}
         />
         <Line
           x1={pa.x - ox} y1={pa.y - oy} x2={pb.x - ox} y2={pb.y - oy}
-          stroke={GUIDE} strokeWidth={3.5} strokeLinecap="round" strokeOpacity={opacity} strokeDasharray={dash}
+          stroke={visual.stroke} strokeWidth={visual.strokeWidth * 0.78}
+          strokeLinecap="round" strokeOpacity={opacity} strokeDasharray={visual.dash}
         />
       </React.Fragment>
     );
-  };
-
-  const contourPath = (contour: NormalizedPoint[]) => {
-    if (contour.length < 3) return '';
-    return contour.map((p, index) => `${index === 0 ? 'M' : 'L'} ${tx(p.x)} ${ty(p.y)}`).join(' ') + ' Z';
   };
 
   const renderFallbackPersonOutline = (person: PersonGuide, index: number) => {
     const { head, shoulders, torso, joints = {} } = person;
     const hipL = joints.leftHip ?? { x: torso.bottom.x - torso.width * 0.32, y: torso.bottom.y };
     const hipR = joints.rightHip ?? { x: torso.bottom.x + torso.width * 0.32, y: torso.bottom.y };
-    const dash = guide.mode === 'simple' ? '10 8' : undefined;
 
     const torsoPath = [
       `M ${tx(shoulders.left.x)} ${ty(shoulders.left.y)}`,
@@ -84,17 +150,17 @@ export function GuideOverlay({ guide, width, height, opacity = 0.94 }: Props) {
     return (
       <React.Fragment key={`fallback-person-${index}`}>
         <Ellipse
-          cx={tx(head.center.x)} cy={ty(head.center.y)}
-          rx={rx(head.rx)} ry={ry(head.ry)}
-          fill="none" stroke={GUIDE} strokeWidth={4} strokeOpacity={opacity}
-          strokeDasharray={dash}
+          cx={tx(head.center.x)} cy={ty(head.center.y)} rx={rx(head.rx)} ry={ry(head.ry)}
+          fill={visual.stroke} fillOpacity={visual.fillOpacity}
+          stroke={visual.stroke} strokeWidth={visual.strokeWidth} strokeOpacity={opacity}
+          strokeDasharray={visual.dash}
         />
         <Path
           d={torsoPath}
-          fill="none" stroke={GUIDE} strokeWidth={4} strokeLinejoin="round" strokeOpacity={opacity}
-          strokeDasharray={dash}
+          fill={visual.stroke} fillOpacity={visual.fillOpacity}
+          stroke={visual.stroke} strokeWidth={visual.strokeWidth}
+          strokeLinejoin="round" strokeOpacity={opacity} strokeDasharray={visual.dash}
         />
-
         {renderTubeSegment(shoulders.left, joints.leftElbow, `${index}-left-upper-arm`)}
         {renderTubeSegment(joints.leftElbow, joints.leftWrist, `${index}-left-lower-arm`, 0.78)}
         {renderTubeSegment(shoulders.right, joints.rightElbow, `${index}-right-upper-arm`)}
@@ -114,33 +180,42 @@ export function GuideOverlay({ guide, width, height, opacity = 0.94 }: Props) {
       : head.facing === 'right'
         ? head.center.x + 0.085
         : head.center.x;
+    const hasContour = Boolean(person.contour && person.contour.length >= 3);
+    const d = hasContour ? contourPath(person.contour!) : '';
 
     return (
       <React.Fragment key={`person-${index}`}>
-        {person.contour && person.contour.length >= 3
-          ? (
+        {hasContour ? (
+          <>
+            {visual.glowWidth ? (
+              <Path
+                d={d} fill={visual.stroke} fillOpacity={visual.fillOpacity * 0.72}
+                stroke={visual.stroke} strokeWidth={visual.glowWidth}
+                strokeOpacity={opacity * 0.16} strokeLinejoin="round" strokeLinecap="round"
+              />
+            ) : null}
             <Path
-              d={contourPath(person.contour)}
-              fill={GUIDE}
-              fillOpacity={0.018}
-              stroke={GUIDE}
-              strokeWidth={4.5}
+              d={d}
+              fill={visual.stroke}
+              fillOpacity={visual.fillOpacity}
+              stroke={visual.stroke}
+              strokeWidth={visual.strokeWidth}
               strokeLinejoin="round"
               strokeLinecap="round"
               strokeOpacity={opacity}
-              strokeDasharray={guide.mode === 'simple' ? '10 8' : undefined}
+              strokeDasharray={visual.dash}
             />
-          )
-          : renderFallbackPersonOutline(person, index)}
+          </>
+        ) : renderFallbackPersonOutline(person, index)}
 
-        {head.facing !== 'front' && (
+        {visual.showFaceDirection && head.facing !== 'front' && (
           <>
             <Line
               x1={tx(head.center.x)} y1={ty(head.center.y)}
               x2={tx(faceArrowX)} y2={ty(head.center.y)}
-              stroke={GUIDE} strokeWidth={3} strokeOpacity={opacity * 0.92}
+              stroke={visual.stroke} strokeWidth={2.5} strokeOpacity={opacity * 0.9}
             />
-            <Circle cx={tx(faceArrowX)} cy={ty(head.center.y)} r={5} fill={GUIDE} fillOpacity={opacity} />
+            <Circle cx={tx(faceArrowX)} cy={ty(head.center.y)} r={4.5} fill={visual.stroke} fillOpacity={opacity} />
           </>
         )}
       </React.Fragment>
@@ -151,15 +226,22 @@ export function GuideOverlay({ guide, width, height, opacity = 0.94 }: Props) {
 
   return (
     <Svg width={width} height={height} style={{ position: 'absolute', left: 0, top: 0 }} pointerEvents="none">
-      <Rect
-        x={frame.x + 1} y={frame.y + 1}
-        width={Math.max(0, frame.width - 2)} height={Math.max(0, frame.height - 2)}
-        fill="none" stroke={WHITE} strokeWidth={1.5} strokeOpacity={0.38}
-      />
-      <Line x1={frame.x + frame.width / 3} y1={frame.y} x2={frame.x + frame.width / 3} y2={frame.y + frame.height} stroke={WHITE} strokeOpacity={0.13} />
-      <Line x1={frame.x + (frame.width * 2) / 3} y1={frame.y} x2={frame.x + (frame.width * 2) / 3} y2={frame.y + frame.height} stroke={WHITE} strokeOpacity={0.13} />
-      <Line x1={frame.x} y1={frame.y + frame.height / 3} x2={frame.x + frame.width} y2={frame.y + frame.height / 3} stroke={WHITE} strokeOpacity={0.13} />
-      <Line x1={frame.x} y1={frame.y + (frame.height * 2) / 3} x2={frame.x + frame.width} y2={frame.y + (frame.height * 2) / 3} stroke={WHITE} strokeOpacity={0.13} />
+      {visual.showFrame && (
+        <Rect
+          x={frame.x + 1} y={frame.y + 1}
+          width={Math.max(0, frame.width - 2)} height={Math.max(0, frame.height - 2)}
+          fill="none" stroke={visual.secondary} strokeWidth={1.5} strokeOpacity={0.32}
+        />
+      )}
+
+      {visual.showGrid && (
+        <>
+          <Line x1={frame.x + frame.width / 3} y1={frame.y} x2={frame.x + frame.width / 3} y2={frame.y + frame.height} stroke={visual.secondary} strokeOpacity={0.12} />
+          <Line x1={frame.x + (frame.width * 2) / 3} y1={frame.y} x2={frame.x + (frame.width * 2) / 3} y2={frame.y + frame.height} stroke={visual.secondary} strokeOpacity={0.12} />
+          <Line x1={frame.x} y1={frame.y + frame.height / 3} x2={frame.x + frame.width} y2={frame.y + frame.height / 3} stroke={visual.secondary} strokeOpacity={0.12} />
+          <Line x1={frame.x} y1={frame.y + (frame.height * 2) / 3} x2={frame.x + frame.width} y2={frame.y + (frame.height * 2) / 3} stroke={visual.secondary} strokeOpacity={0.12} />
+        </>
+      )}
 
       {guide.kind === 'portrait' && guide.people.map(renderPerson)}
 
@@ -172,7 +254,7 @@ export function GuideOverlay({ guide, width, height, opacity = 0.94 }: Props) {
                 key={`relation-${i}`}
                 x1={tx(object.center.x)} y1={ty(object.center.y)}
                 x2={tx(next.center.x)} y2={ty(next.center.y)}
-                stroke={GUIDE} strokeWidth={2} strokeDasharray="6 8" strokeOpacity={0.45}
+                stroke={visual.stroke} strokeWidth={2} strokeDasharray="6 8" strokeOpacity={0.42}
               />
             );
           })}
@@ -181,17 +263,17 @@ export function GuideOverlay({ guide, width, height, opacity = 0.94 }: Props) {
               <Ellipse
                 cx={tx(object.center.x)} cy={ty(object.center.y)}
                 rx={rx(object.rx)} ry={ry(object.ry)}
-                fill={guide.mode === 'simple' ? GUIDE : 'none'}
-                fillOpacity={guide.mode === 'simple' ? 0.07 : 0}
-                stroke={GUIDE}
-                strokeWidth={guide.mode === 'outline' ? 4 : 3}
-                strokeDasharray={guide.mode === 'simple' ? '10 8' : undefined}
+                fill={visual.stroke}
+                fillOpacity={visualStyle === 'poseghost' ? 0.10 : guide.mode === 'simple' ? 0.055 : 0}
+                stroke={visual.stroke}
+                strokeWidth={visual.strokeWidth}
+                strokeDasharray={visualStyle === 'recompose' ? '12 8' : guide.mode === 'simple' ? '10 8' : undefined}
                 strokeOpacity={opacity}
                 transform={object.rotation ? `rotate(${object.rotation} ${tx(object.center.x)} ${ty(object.center.y)})` : undefined}
               />
               <SvgText
                 x={tx(object.center.x)} y={ty(object.center.y) + 4}
-                fill={WHITE} fillOpacity={0.9} fontSize="11" fontWeight="700" textAnchor="middle"
+                fill={visual.secondary} fillOpacity={0.9} fontSize="11" fontWeight="700" textAnchor="middle"
               >
                 {object.label}
               </SvgText>
@@ -200,11 +282,11 @@ export function GuideOverlay({ guide, width, height, opacity = 0.94 }: Props) {
         </>
       )}
 
-      <SvgText x={frame.x + 14} y={frame.y + 28} fill={WHITE} fillOpacity={0.84} fontSize="13" fontWeight="700">
-        {guide.kind === 'food'
-          ? 'TABLETOP · MATCH SIZE + RELATION'
-          : `${guide.crop.toUpperCase()} · OUTER CONTOUR`}
-      </SvgText>
+      {(visualStyle === 'poseoverlay' || visualStyle === 'recompose') && (
+        <SvgText x={frame.x + 14} y={frame.y + 28} fill={visual.secondary} fillOpacity={0.80} fontSize="12" fontWeight="700">
+          {guide.kind === 'food' ? 'MATCH SIZE + RELATION' : `${guide.crop.toUpperCase()} · OUTER CONTOUR`}
+        </SvgText>
+      )}
     </Svg>
   );
 }
