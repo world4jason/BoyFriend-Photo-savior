@@ -1,53 +1,83 @@
 # BoyFriend Photo Savior
 
-A **reference -> shared guide geometry -> switchable camera guide -> live coach** MVP for Web, iOS and Android.
+A **reference/template -> shared geometry -> display mode -> camera guide -> live coach** MVP for Web, iOS and Android.
 
 ## Product model
 
-The product exists to help a non-photographer reproduce the important composition of a reference image **without memorizing it**.
+The app has two separate concepts:
 
 ```text
-reference photo
-    -> analyze once
-    -> contour + pose + face + composition geometry
-    -> choose how to show it
-    -> live camera
-    -> one useful correction at a time
-    -> photo
+MODE     = how the photographer sees guidance
+TEMPLATE = what pose/composition the photographer is trying to make
 ```
 
-### Four guide presets
+### Four display modes
 
-The four benchmark names are **four views of the same reference**, not four separate detection pipelines:
+These are the product names shown to users:
 
-| Camera preset | Inspired by | Shows |
+| Mode | Benchmark inspiration | Shows |
 | --- | --- | --- |
-| **Outline** | SOVS / SOVS2 | clean outside contour; subject steps into it |
-| **Skeleton** | PoseOverlay | explicit body skeleton + pose anchors |
+| **Outline** | SOVS / SOVS2 | clean outside contour; step into the shape |
+| **Skeleton** | PoseOverlay | explicit body skeleton + meaningful joint anchors |
 | **Ghost** | PoseGhost | translucent filled silhouette / stencil |
-| **Guide** | reCompose | semantic zones, eye lines, look space, object relationships, labels |
+| **Guide** | reCompose | semantic zones, lines, eye lines, look space, object/scene relationships |
 
-For a portrait, the user can switch among all four in the reference preview **and while the camera is open**. The underlying MediaPipe analysis is reused; changing the preset does not rerun ML.
+Benchmark brand names are research references, not the primary feature taxonomy.
 
-For food/object composition, the current applicable preset is **reCompose-like Guide**; other object representations can be added later where they make semantic sense.
+For an uploaded portrait, the app analyzes the photo once and keeps one shared `GuideSpec`. Switching Outline / Skeleton / Ghost / Guide changes presentation only; it does not rerun MediaPipe.
+
+### Templates
+
+Templates are reusable shots such as:
+
+- Power Stance
+- Wall Lean
+- Over the Shoulder
+- Couple Walk
+- Plate + Glass
+- Leading Lines
+- Big Sky
+- Peak + Anchor
+
+Each template has a recommended/default display mode. Portrait geometry can generally be viewed in any of the four modes; food/scene templates currently use **Guide**.
+
+### Live Coach is not a fifth mode
+
+Live Coach is an orthogonal assistance layer. It can operate while a portrait is displayed as Outline, Skeleton, Ghost or Guide.
+
+## Template library
+
+The MVP template library is bootstrapped from public product documentation, official sites and store listings. We reproduce useful **functional geometry/patterns**, not copied proprietary screenshots or traced commercial pose artwork.
+
+Current seed families include:
+
+- **Outline:** standing, lean, seated, squat, look-back, duo/couple/group shapes.
+- **Skeleton:** power stance, hip pop, casual walk, arms crossed, natural stance, wall lean, step forward, seated poses and couple interactions.
+- **Ghost:** female/male pose families, seated/walking/look-back, couple/wedding/friends & groups.
+- **Guide:** reCompose-style Travel, Street, Food, Portrait, Selfie, Pets, Family, Landscape, Buildings and Basic composition patterns.
+
+Guide mode supports reusable semantic primitives:
+
+```text
+line   -> horizon / eye line / leading line
+zone   -> person / plate / landmark / foreground target
+point  -> golden point / peak / subject anchor
+frame  -> frame-within-frame / architecture / action area
+```
 
 See:
 
-- [`docs/PRODUCT.md`](docs/PRODUCT.md) — product doctrine
-- [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md) — research mapping for SOVS2, PoseOverlay, PoseGhost and reCompose
-- [`src/templates/benchmarkTemplates.ts`](src/templates/benchmarkTemplates.ts) — our own vector template seeds inspired by benchmark patterns
+- [`docs/PRODUCT.md`](docs/PRODUCT.md) — authoritative product definition
+- [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md) — benchmark research and source mapping
+- [`src/templates/`](src/templates/) — our normalized vector/template geometry
 - [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) — branch / PR / review workflow
-
-## Asset rule
-
-Commercial app screenshots and proprietary pose artwork are research references, not shipped assets in this public repository. We keep benchmark URLs and recreate reusable guide geometry ourselves. Reference photography used by the demo should be ours or openly licensed.
 
 ## Development rule
 
 Non-trivial work follows:
 
 ```text
-branch -> implementation -> PR -> deliberate self-review -> resolve findings -> merge
+branch -> implementation -> PR -> deliberate self-review -> resolve findings -> squash merge
 ```
 
 GitHub Actions hosted-runner billing/availability is currently **not a merge gate**. A runner failure with zero executed steps is infrastructure status, not an application test result.
@@ -55,23 +85,20 @@ GitHub Actions hosted-runner billing/availability is currently **not a merge gat
 ## What works now
 
 - Expo / React Native shared UI for Web, iOS and Android
-- Import your own reference image
+- Import your own portrait reference image
 - Reference images resized/compressed before crossing the native/DOM analysis bridge
 - MediaPipe Image Segmenter -> one-person outer contour
 - MediaPipe Pose Landmarker -> body anchors
 - MediaPipe Face Landmarker -> left / right / front look direction
 - One shared `GuideSpec` geometry model
-- Four portrait guide renderers:
-  - SOVS-like Outline
-  - PoseOverlay-like Skeleton
-  - PoseGhost-like Ghost
-  - reCompose-like Guide
-- Guide preset selector in reference preview
-- Guide preset selector in camera
+- Four portrait display renderers: Outline / Skeleton / Ghost / Guide
+- Display-mode selector in reference preview and live camera
 - Guide-only preview
-- Move / scale / reset target guide
-- Source aspect ratio preservation
-- reCompose-like food/object zones
+- Move / scale / reset target geometry
+- Source aspect-ratio preservation
+- Food/object Guide zones
+- Scene Guide primitives (lines / zones / points / frames)
+- Benchmark-inspired template library
 - **Sampled Live Coach** for portraits
   - subject position score
   - subject size score
@@ -81,7 +108,7 @@ GitHub Actions hosted-runner billing/availability is currently **not a merge gat
 - Camera capture with captured thumbnail
 - Temporary native sampled-analysis files cleaned after use
 
-## Automatic reference flow
+## Automatic portrait flow
 
 ```text
 Reference photo
@@ -103,38 +130,20 @@ outer contour           joints              face direction
           |               |               |               |
           v               v               v               v
        Outline         Skeleton          Ghost           Guide
-       (SOVS)       (PoseOverlay)     (PoseGhost)     (reCompose)
 ```
 
 ## Sampled Live Coach
 
-Expo Camera does not provide the frame-processor path we ultimately want, so the MVP samples a small still image roughly every 1.7 seconds and runs it through the same local analyzer.
+Expo Camera does not expose the high-FPS frame-processor path we ultimately want, so the MVP samples a small still roughly every 1.7 seconds and runs it through the local analyzer.
 
-The match engine (`src/matching/guideMatch.ts`) compares:
+The match engine compares:
 
 1. framing / subject center
 2. scale / crop
 3. relative pose geometry
 4. face direction when meaningful
 
-The primary camera UI still shows **one action at a time**, for example:
-
-- `Subject -> left`
-- `Move closer`
-- `Face -> right`
-- `Raise left wrist`
-- `✓ Match`
-
-The score remains photography-oriented: composition and framing matter more than anatomical perfection.
-
-## One analyzer across Web / iOS / Android
-
-`src/segmentation/PersonAnalyzerDom.tsx` is an Expo DOM Component.
-
-- **Web:** browser DOM
-- **iOS / Android:** Expo DOM WebView bridge
-
-Reference and sampled images stay local to the app/browser. MediaPipe WASM/model files are currently fetched from public hosting URLs, so first use requires network access. Production should bundle the assets or move inference to native MediaPipe Tasks.
+The primary camera UI still gives one action at a time, for example `Subject -> left`, `Move closer`, `Face -> right`, or `✓ Match`.
 
 ## Run
 
@@ -151,7 +160,7 @@ Then:
 - `i` — iOS simulator
 - `a` — Android emulator
 
-A physical phone is recommended for camera testing. Web camera access outside localhost requires HTTPS.
+A physical phone is recommended for camera testing. For web camera access outside localhost, serve over HTTPS.
 
 ## Validation
 
@@ -163,24 +172,25 @@ npm run typecheck
 npm run export:web
 ```
 
-Physical-device camera smoke tests are required before camera behavior is called stable.
+Do not claim these passed when Actions/billing or local network access prevented them from running.
 
 ## Current limits
 
-- Automatic uploaded-reference extraction targets one primary person.
-- Live Coach is sampled rather than continuous video-frame inference.
-- Food guides are template/reference-zone based; arbitrary uploaded food segmentation is not implemented yet.
-- First MediaPipe model/runtime load needs network access.
-- Benchmark template seeds are vector recreations, not copied commercial artwork.
+- Automatic arbitrary-reference extraction targets one primary person.
+- Live Coach is sampled rather than continuous frame inference.
+- Multi-person templates work as predefined geometry, but arbitrary multi-person extraction is later.
+- Food/scene templates are predefined semantic geometry; arbitrary user-photo object/scene understanding is later.
+- First MediaPipe model/runtime load currently needs network access.
+- Camera features still require physical-device smoke testing before being called stable.
 
 ## Next milestones
 
-1. Surface more benchmark-inspired vector templates in the template picker.
-2. Temporal smoothing / stable-match window before green `Match`.
-3. Optional auto-capture only after multiple stable matches.
-4. Replace sampled captures with true live frame processing (15–30 FPS target).
-5. Better contour tracing around separated arms, legs and props.
-6. Multi-person instance segmentation and relationship guides.
-7. Arbitrary food/object segmentation from uploaded references.
-8. Bundle MediaPipe models/runtime for offline use.
+1. Template browser search/filter by category and people count.
+2. More benchmark/open-reference templates and better vector previews.
+3. Temporal smoothing / stable-match window before green `Match`.
+4. Optional auto-capture only after multiple stable matches.
+5. True live frame processing (15–30 FPS target).
+6. Better contour tracing around separated arms, legs and props.
+7. Arbitrary multi-person / food / object extraction.
+8. Bundle MediaPipe runtime/models for offline use.
 9. Save/share captured photos.
