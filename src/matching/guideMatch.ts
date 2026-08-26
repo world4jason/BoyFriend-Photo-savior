@@ -110,6 +110,10 @@ function personPoints(person: PersonGuide): NamedPoint[] {
   return points;
 }
 
+function poseAnchorCount(person: PersonGuide): number {
+  return Object.values(person.joints ?? {}).filter(Boolean).length;
+}
+
 function boxFromPoints(points: NormalizedPoint[]): Box {
   const xs = points.map((point) => point.x);
   const ys = points.map((point) => point.y);
@@ -241,6 +245,9 @@ export function scorePortraitMatch(targetGuide: GuideSpec, liveGuide: GuideSpec)
   const scaleScore = clamp01(1 - scaleError / 0.52);
 
   const pose = relativePoseScore(targetGuide, target, liveGuide, live);
+  // If the target itself encodes a meaningful pose, losing live pose landmarks
+  // must never silently turn matching into framing-only and unlock Auto Capture.
+  const poseRequired = poseAnchorCount(target) >= 2;
   const targetFacing = target.head.facing;
   const liveFacing = live.head.facing;
   let faceScore: number | undefined;
@@ -259,9 +266,10 @@ export function scorePortraitMatch(targetGuide: GuideSpec, liveGuide: GuideSpec)
   const rawScore = weighted.reduce((sum, [componentScore, weight]) => sum + componentScore * weight, 0) / Math.max(0.001, weightTotal);
   const score = Math.round(clamp01(rawScore) * 100);
 
+  const poseGood = poseRequired ? pose.score != null && pose.score >= 0.72 : pose.score == null || pose.score >= 0.72;
   const componentsGood = framingScore >= 0.76
     && scaleScore >= 0.76
-    && (pose.score == null || pose.score >= 0.72)
+    && poseGood
     && (faceScore == null || faceScore >= 0.80);
   const matched = score >= 86 && componentsGood;
 
@@ -283,6 +291,9 @@ export function scorePortraitMatch(targetGuide: GuideSpec, liveGuide: GuideSpec)
   } else if (targetFacing !== 'front' && targetFacing !== liveFacing) {
     hint = targetFacing === 'left' ? 'Face ← left' : 'Face → right';
     detail = 'Match the head direction from the reference.';
+  } else if (poseRequired && pose.score == null) {
+    hint = 'Show the full pose';
+    detail = 'Keep shoulders and enough arm/leg landmarks visible so the target pose can be verified.';
   } else if (pose.score != null && pose.score < 0.72 && pose.worst) {
     const joint = humanizeJoint(pose.worst);
     if (pose.dy != null && Math.abs(pose.dy) > 0.10 && pose.worst.includes('wrist')) {
