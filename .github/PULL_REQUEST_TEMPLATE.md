@@ -8,13 +8,15 @@
 
 ## Product doctrine check
 
-- [ ] This still follows `reference -> abstract guide -> camera`.
-- [ ] Human shooting UI remains contour/semantic-guide first, not skeleton/debug-data first.
+- [ ] This still follows `reference -> shared geometry -> guide preset -> camera`.
+- [ ] Outline remains the default portrait guide; Skeleton is shown only when the user explicitly chooses that preset.
+- [ ] Skeleton/landmarks are photographer guidance, not raw CV/debug-data dumps.
 - [ ] The camera gives one primary actionable instruction at a time.
 - [ ] Capability wording is accurate (for example `sampled`, not falsely `real-time`).
 
 ## Technical review
 
+- [ ] Preset switching changes presentation without corrupting shared target geometry.
 - [ ] Async/race behavior reviewed.
 - [ ] Image/memory/cache lifetime reviewed.
 - [ ] Web / iOS / Android behavior considered.
