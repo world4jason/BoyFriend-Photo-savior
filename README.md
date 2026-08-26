@@ -47,13 +47,13 @@ Live Coach is an orthogonal assistance layer. It can operate while a portrait is
 
 ## Template library
 
-The MVP template library is bootstrapped from public product documentation, official sites and store listings. We reproduce useful **functional geometry/patterns**, not copied proprietary screenshots or traced commercial pose artwork.
+The MVP template library is bootstrapped from public product documentation, official sites and store listings. We reproduce useful **functional geometry/patterns** as normalized `GuideSpec` data.
 
 Current seed families include:
 
 - **Outline:** standing, lean, seated, squat, look-back, duo/couple/group shapes.
 - **Skeleton:** power stance, hip pop, casual walk, arms crossed, natural stance, wall lean, step forward, seated poses and couple interactions.
-- **Ghost:** female/male pose families, seated/walking/look-back, couple/wedding/friends & groups.
+- **Ghost:** a **62-slot PoseGhost POC library** across Selfie Essentials, Female, Male, Couple, Wedding, and Friends & Groups. The public store states the total and category families; our current per-category allocation/geometry is a POC reconstruction, not a claim of exact internal PoseGhost ordering.
 - **Guide:** reCompose-style Travel, Street, Food, Portrait, Selfie, Pets, Family, Landscape, Buildings and Basic composition patterns.
 
 Guide mode supports reusable semantic primitives:
@@ -69,7 +69,8 @@ See:
 
 - [`docs/PRODUCT.md`](docs/PRODUCT.md) — authoritative product definition
 - [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md) — benchmark research and source mapping
-- [`src/templates/`](src/templates/) — our normalized vector/template geometry
+- [`docs/POSEGHOST_POC.md`](docs/POSEGHOST_POC.md) — PoseGhost 62-slot POC source notes and extraction plan
+- [`src/templates/`](src/templates/) — normalized vector/template geometry
 - [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) — branch / PR / review workflow
 
 ## Development rule
@@ -99,6 +100,7 @@ GitHub Actions hosted-runner billing/availability is currently **not a merge gat
 - Food/object Guide zones
 - Scene Guide primitives (lines / zones / points / frames)
 - Benchmark-inspired template library
+- 62-slot Ghost POC catalog generated from public PoseGhost category/family information
 - **Sampled Live Coach** for portraits
   - subject position score
   - subject size score
@@ -180,17 +182,19 @@ Do not claim these passed when Actions/billing or local network access prevented
 - Live Coach is sampled rather than continuous frame inference.
 - Multi-person templates work as predefined geometry, but arbitrary multi-person extraction is later.
 - Food/scene templates are predefined semantic geometry; arbitrary user-photo object/scene understanding is later.
+- The current 62 Ghost slots are category/family reconstruction POCs; exact one-to-one commercial overlay extraction requires source captures from an installed copy.
 - First MediaPipe model/runtime load currently needs network access.
 - Camera features still require physical-device smoke testing before being called stable.
 
 ## Next milestones
 
-1. Template browser search/filter by category and people count.
-2. More benchmark/open-reference templates and better vector previews.
-3. Temporal smoothing / stable-match window before green `Match`.
-4. Optional auto-capture only after multiple stable matches.
-5. True live frame processing (15–30 FPS target).
-6. Better contour tracing around separated arms, legs and props.
-7. Arbitrary multi-person / food / object extraction.
-8. Bundle MediaPipe runtime/models for offline use.
-9. Save/share captured photos.
+1. Replace approximate Ghost POC slots with screenshot/app-derived normalized geometry where useful.
+2. Template browser search/filter by category and people count.
+3. More benchmark/open-reference templates and better vector previews.
+4. Temporal smoothing / stable-match window before green `Match`.
+5. Optional auto-capture only after multiple stable matches.
+6. True live frame processing (15–30 FPS target).
+7. Better contour tracing around separated arms, legs and props.
+8. Arbitrary multi-person / food / object extraction.
+9. Bundle MediaPipe runtime/models for offline use.
+10. Save/share captured photos.
