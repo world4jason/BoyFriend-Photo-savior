@@ -11,4 +11,4 @@
 - [ ] Run `npm run spec:validate` when a runnable environment is available.
 - [ ] Run `npm run typecheck` when a runnable environment is available.
 - [ ] Run `npm run export:web` when a runnable environment is available.
-- [ ] Complete final PR diff review and resolve all P0/P1 before merge.
+- [x] Complete final PR diff review and resolve all P0/P1 before merge.
