@@ -1,16 +1,12 @@
 export type GuideMode = 'simple' | 'outline';
-export type GuideKind = 'portrait' | 'food';
+export type GuideKind = 'portrait' | 'food' | 'scene';
 
 /**
- * Four photographer-facing guide presets inspired by benchmark products.
- *
- * - sovs: clean step-in outer contour (SOVS / SOVS2-like)
- * - poseoverlay: explicit pose skeleton + matching cues (PoseOverlay-like)
- * - poseghost: translucent filled silhouette (PoseGhost-like)
- * - recompose: semantic composition zones / lines / labels (reCompose-like)
+ * Four photographer-facing display modes.
+ * Product/UI names are Outline / Skeleton / Ghost / Guide.
+ * Benchmark product names are research references only.
  */
 export type GuidePreset = 'sovs' | 'poseoverlay' | 'poseghost' | 'recompose';
-/** Backward-compatible name used by existing renderer/sample code. */
 export type GuideVisualStyle = GuidePreset;
 
 export type NormalizedPoint = { x: number; y: number };
@@ -21,10 +17,40 @@ export type GuideTransform = {
   scale: number;
 };
 
+export type GuideAnnotation =
+  | {
+      type: 'line';
+      from: NormalizedPoint;
+      to: NormalizedPoint;
+      label?: string;
+      dashed?: boolean;
+    }
+  | {
+      type: 'zone';
+      center: NormalizedPoint;
+      rx: number;
+      ry: number;
+      label?: string;
+      rotation?: number;
+    }
+  | {
+      type: 'point';
+      position: NormalizedPoint;
+      label?: string;
+    }
+  | {
+      type: 'frame';
+      left: number;
+      top: number;
+      right: number;
+      bottom: number;
+      label?: string;
+    };
+
 /**
- * Pose joints are shared geometry. They stay hidden in SOVS/PoseGhost/reCompose
- * modes, but are intentionally rendered when the user explicitly chooses the
- * PoseOverlay-like skeleton preset.
+ * Pose joints are shared geometry. They stay hidden in Outline/Ghost/Guide
+ * modes, but are intentionally rendered when the user explicitly chooses
+ * Skeleton mode.
  */
 export type PoseJoints = {
   leftElbow?: NormalizedPoint;
@@ -70,12 +96,14 @@ export type ObjectGuide = {
 
 export type GuideSpec = {
   kind: GuideKind;
+  /** Legacy object sub-style; not one of the four product display modes. */
   mode: GuideMode;
-  /** Photographer-facing representation preset. */
+  /** Photographer-facing display mode. */
   visualStyle?: GuidePreset;
   people: PersonGuide[];
   objects?: ObjectGuide[];
-  crop: 'headshot' | 'half' | 'three-quarter' | 'full' | 'tabletop';
+  annotations?: GuideAnnotation[];
+  crop: 'headshot' | 'half' | 'three-quarter' | 'full' | 'tabletop' | 'scene';
   lookSpace: 'left' | 'right' | 'center';
   sourceUri?: string;
   /** Source image width / height. Used to keep the guide undistorted in camera. */
