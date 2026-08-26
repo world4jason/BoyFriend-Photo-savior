@@ -125,7 +125,6 @@ export default function App() {
   const onOutlineResult = (request: OutlineAnalysisRequest, detection: PersonContourDetection) => {
     try {
       const nextGuide = buildGuideFromContour(detection, request.aspectRatio, request.sourceUri);
-      // The analyzer owns geometry, not presentation. Preserve the user's selected preset.
       nextGuide.visualStyle = guide.visualStyle ?? 'sovs';
       setGuide(nextGuide);
       setAnalysisStatus('ready');
@@ -529,20 +528,22 @@ export default function App() {
         </Pressable>
 
         {guide.kind === 'portrait' && (
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.cameraPresetRow}>
-            {availablePresets.map((preset) => {
-              const active = (guide.visualStyle ?? 'sovs') === preset.key;
-              return (
-                <Pressable
-                  key={preset.key}
-                  onPress={() => setGuidePreset(preset.key)}
-                  style={[styles.cameraPresetButton, active && styles.cameraPresetButtonActive]}
-                >
-                  <Text style={[styles.cameraPresetText, active && styles.cameraPresetTextActive]}>{preset.shortLabel}</Text>
-                </Pressable>
-              );
-            })}
-          </ScrollView>
+          <View style={styles.cameraPresetWrap}>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.cameraPresetRow}>
+              {availablePresets.map((preset) => {
+                const active = (guide.visualStyle ?? 'sovs') === preset.key;
+                return (
+                  <Pressable
+                    key={preset.key}
+                    onPress={() => setGuidePreset(preset.key)}
+                    style={[styles.cameraPresetButton, active && styles.cameraPresetButtonActive]}
+                  >
+                    <Text style={[styles.cameraPresetText, active && styles.cameraPresetTextActive]}>{preset.shortLabel}</Text>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+          </View>
         )}
 
         {liveFeedback && guide.kind === 'portrait' && (
@@ -656,7 +657,8 @@ const styles = StyleSheet.create({
   liveBadgeMatched: { backgroundColor: 'rgba(29,75,45,0.88)', borderColor: '#85F3A7' },
   liveBadgeText: { color: '#F8FF61', fontSize: 12, fontWeight: '900', letterSpacing: 0.7 },
   liveBadgeSub: { color: '#A9ADB6', fontSize: 8, fontWeight: '800', letterSpacing: 0.9, marginTop: 2 },
-  cameraPresetRow: { position: 'absolute', top: 78, left: 12, right: 12, gap: 7, justifyContent: 'center' },
+  cameraPresetWrap: { position: 'absolute', top: 78, left: 12, right: 12, height: 40 },
+  cameraPresetRow: { gap: 7, paddingHorizontal: 2, alignItems: 'center' },
   cameraPresetButton: { minWidth: 70, paddingHorizontal: 10, paddingVertical: 7, borderRadius: 999, alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.58)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.22)' },
   cameraPresetButtonActive: { backgroundColor: '#F8FF61', borderColor: '#F8FF61' },
   cameraPresetText: { color: '#FFF', fontSize: 9, fontWeight: '900' },
