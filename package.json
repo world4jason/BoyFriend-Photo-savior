@@ -9,6 +9,9 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "export:web": "expo export --platform web",
+    "build:apk": "npx eas-cli@latest build --platform android --profile preview",
+    "download:apk": "npx eas-cli@latest build:download --platform android",
+    "build:aab": "npx eas-cli@latest build --platform android --profile production",
     "typecheck": "tsc --noEmit",
     "spec:validate": "openspec validate --specs --strict --no-interactive"
   },
