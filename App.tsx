@@ -59,6 +59,7 @@ export default function App() {
 
   const cameraRef = useRef<CameraView | null>(null);
   const liveBusyRef = useRef(false);
+  const referencePrepareGenerationRef = useRef(0);
 
   const previewWidth = Math.min(Math.max(width - 24, 280), 620);
   const previewHeight = Math.min(height * 0.60, 680);
@@ -75,6 +76,7 @@ export default function App() {
     const asset = result.assets[0];
     if (!asset?.uri) return;
 
+    const prepareGeneration = ++referencePrepareGenerationRef.current;
     cleanupRequestFiles(analysisRequest);
     setAnalysisRequest(null);
 
@@ -94,6 +96,12 @@ export default function App() {
 
     try {
       const prepared = await prepareAnalysisImage(asset.uri, asset.width, asset.height, 1280, 0.74);
+
+      if (prepareGeneration !== referencePrepareGenerationRef.current) {
+        cleanupTemporaryUri(prepared.temporaryUri);
+        return;
+      }
+
       setAnalysisRequest({
         id: `ref-${Date.now()}-${Math.random().toString(36).slice(2)}`,
         dataUrl: prepared.dataUrl,
@@ -103,6 +111,7 @@ export default function App() {
       });
       setAnalysisMessage('Extracting silhouette + pose + face direction…');
     } catch (error) {
+      if (prepareGeneration !== referencePrepareGenerationRef.current) return;
       setAnalysisStatus('error');
       setAnalysisMessage(error instanceof Error ? error.message : 'Could not prepare the reference for local analysis.');
     }
@@ -135,6 +144,7 @@ export default function App() {
   };
 
   const useSample = (sample: SampleReference) => {
+    referencePrepareGenerationRef.current += 1;
     cleanupRequestFiles(analysisRequest);
     setAnalysisRequest(null);
 
