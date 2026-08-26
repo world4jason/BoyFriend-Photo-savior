@@ -1,6 +1,7 @@
-import { File } from 'expo-file-system';
 import * as ImageManipulator from 'expo-image-manipulator';
-import { Platform } from 'react-native';
+import { cleanupTemporaryUri } from './cleanupTemporaryUri';
+
+export { cleanupTemporaryUri } from './cleanupTemporaryUri';
 
 export type PreparedAnalysisImage = {
   dataUrl: string;
@@ -35,6 +36,7 @@ export async function prepareAnalysisImage(
   });
 
   if (!saved.base64) {
+    cleanupTemporaryUri(saved.uri);
     throw new Error('Could not prepare image bytes for local analysis.');
   }
 
@@ -44,15 +46,4 @@ export async function prepareAnalysisImage(
     height: saved.height,
     temporaryUri: saved.uri,
   };
-}
-
-export function cleanupTemporaryUri(uri?: string | null) {
-  if (!uri || Platform.OS === 'web' || !uri.startsWith('file://')) return;
-
-  try {
-    const file = new File(uri);
-    if (file.exists) file.delete();
-  } catch {
-    // Cache cleanup is best-effort and must never interrupt camera or analysis UX.
-  }
 }
