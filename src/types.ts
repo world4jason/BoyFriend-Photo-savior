@@ -14,6 +14,15 @@ export type GuidePreset = BenchmarkPresetKey;
 /** @deprecated Compatibility alias for legacy sample/template visualStyle fields. */
 export type GuideVisualStyle = BenchmarkPresetKey;
 
+export type TemplateFidelity = 'source-derived' | 'approximate';
+export type LensHintBasis = 'exif-35mm' | 'template' | 'crop-heuristic';
+export type LensHint = {
+  /** Photographer-facing camera selector hint, not an enforced CameraView zoom value. */
+  zoom: 0.5 | 1 | 2 | 3;
+  basis: LensHintBasis;
+  equivalentMm?: number;
+};
+
 export type NormalizedPoint = { x: number; y: number };
 
 export type GuideTransform = {
@@ -113,6 +122,10 @@ export type GuideSpec = {
   crop: 'headshot' | 'half' | 'three-quarter' | 'full' | 'tabletop' | 'scene';
   lookSpace: 'left' | 'right' | 'center';
   sourceUri?: string;
+  /** Whether geometry came from the exact source image or is only a POC approximation. */
+  fidelity?: TemplateFidelity;
+  /** Suggested physical camera selector. This never changes matching geometry by itself. */
+  lensHint?: LensHint;
   /** Source image width / height. Used to keep the guide undistorted in camera. */
   aspectRatio?: number;
   transform: GuideTransform;
@@ -139,6 +152,8 @@ export const DEFAULT_GUIDE: GuideSpec = {
   people: [DEFAULT_PERSON],
   crop: 'half',
   lookSpace: 'left',
+  fidelity: 'approximate',
+  lensHint: { zoom: 2, basis: 'crop-heuristic' },
   aspectRatio: 0.75,
   transform: { dx: 0, dy: 0, scale: 1 },
 };

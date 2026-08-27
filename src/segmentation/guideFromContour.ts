@@ -1,5 +1,6 @@
 import { GuideSpec, NormalizedPoint, PersonGuide, PoseJoints } from '../types';
 import { PoseLandmark } from '../pose/PoseDetector';
+import { lensHintFromGuide } from '../shooting/lensHint';
 
 export type PersonContourDetection = {
   contour: NormalizedPoint[];
@@ -166,7 +167,7 @@ export function buildGuideFromContour(
         ? 'half'
         : 'headshot';
 
-  return {
+  const guide: GuideSpec = {
     kind: 'portrait',
     mode: 'outline',
     displayMode: 'outline',
@@ -176,7 +177,10 @@ export function buildGuideFromContour(
     crop,
     lookSpace: facing === 'left' ? 'left' : facing === 'right' ? 'right' : 'center',
     sourceUri,
+    fidelity: 'source-derived',
     aspectRatio: aspectRatio > 0 ? aspectRatio : 0.75,
     transform: { dx: 0, dy: 0, scale: 1 },
   };
+  guide.lensHint = lensHintFromGuide(guide);
+  return guide;
 }
