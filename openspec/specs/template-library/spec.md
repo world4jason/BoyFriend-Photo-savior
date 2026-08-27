@@ -14,7 +14,7 @@ The system SHALL store reusable templates as normalized geometry and semantic an
 - **THEN** the app loads a GuideSpec target that can be rendered directly in the camera
 
 ### Requirement: Template fidelity is explicit
-Benchmark-derived templates SHALL declare whether their geometry is `approximate` or `source-derived`.
+Benchmark-derived templates and source-backed instant examples SHALL declare whether their geometry is `approximate` or `source-derived`.
 
 #### Scenario: Existing generic pose seed
 - **WHEN** a template is generated from a reusable hand-authored pose family rather than a specific source image
@@ -23,6 +23,10 @@ Benchmark-derived templates SHALL declare whether their geometry is `approximate
 #### Scenario: Source-derived template
 - **WHEN** a template has been reconstructed and visually checked against a specific source sample
 - **THEN** it MAY be labeled `source-derived` and MAY expose that source image as a Reference Overlay
+
+#### Scenario: Source-derived instant example
+- **WHEN** an instant example is deliberately calibrated against its displayed source image
+- **THEN** its contour and pose geometry correspond to that specific source and it MAY be labeled `source-derived`
 
 ### Requirement: Template has a recommended mode
 Each template SHALL identify a recommended/default Display Mode, while portrait templates MAY be viewed in other supported modes when their geometry is sufficient.
