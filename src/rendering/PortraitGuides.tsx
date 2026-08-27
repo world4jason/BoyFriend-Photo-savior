@@ -1,5 +1,5 @@
 import React from 'react';
-import Svg, { Circle, Ellipse, Line, Path, Rect, Text as SvgText } from 'react-native-svg';
+import { Circle, Ellipse, Line, Path, Rect, Text as SvgText } from 'react-native-svg';
 import type { GuideSpec, NormalizedPoint, PersonGuide } from '../types';
 
 export type PortraitVisualStyle = 'outline' | 'skeleton' | 'ghost' | 'guide';
@@ -30,6 +30,22 @@ const midpoint = (a: PixelPoint, b: PixelPoint): PixelPoint => ({
   y: (a.y + b.y) / 2,
 });
 
+const distance = (a: PixelPoint, b: PixelPoint) => Math.hypot(a.x - b.x, a.y - b.y);
+
+function normalize(dx: number, dy: number): PixelPoint {
+  const length = Math.max(0.0001, Math.hypot(dx, dy));
+  return { x: dx / length, y: dy / length };
+}
+
+function lineIntersection(p1: PixelPoint, d1: PixelPoint, p2: PixelPoint, d2: PixelPoint): PixelPoint | null {
+  const cross = d1.x * d2.y - d1.y * d2.x;
+  if (Math.abs(cross) < 0.00001) return null;
+  const qx = p2.x - p1.x;
+  const qy = p2.y - p1.y;
+  const t = (qx * d2.y - qy * d2.x) / cross;
+  return { x: p1.x + t * d1.x, y: p1.y + t * d1.y };
+}
+
 function smoothClosedPixelPath(points: PixelPoint[]): string {
   if (points.length < 3) return '';
   const firstMid = midpoint(points[points.length - 1], points[0]);
@@ -44,25 +60,40 @@ function smoothClosedPixelPath(points: PixelPoint[]): string {
   return commands.join(' ');
 }
 
+function offsetPolyline(points: PixelPoint[], radii: number[], side: 1 | -1): PixelPoint[] {
+  return points.map((point, index) => {
+    const radius = radii[index];
+    if (index === 0 || index === points.length - 1) {
+      const other = index === 0 ? points[1] : points[index - 1];
+      const direction = index === 0
+        ? normalize(other.x - point.x, other.y - point.y)
+        : normalize(point.x - other.x, point.y - other.y);
+      const normal = { x: -direction.y * side, y: direction.x * side };
+      return { x: point.x + normal.x * radius, y: point.y + normal.y * radius };
+    }
+
+    const incoming = normalize(point.x - points[index - 1].x, point.y - points[index - 1].y);
+    const outgoing = normalize(points[index + 1].x - point.x, points[index + 1].y - point.y);
+    const n1 = { x: -incoming.y * side, y: incoming.x * side };
+    const n2 = { x: -outgoing.y * side, y: outgoing.x * side };
+    const a = { x: point.x + n1.x * radius, y: point.y + n1.y * radius };
+    const b = { x: point.x + n2.x * radius, y: point.y + n2.y * radius };
+    const intersection = lineIntersection(a, incoming, b, outgoing);
+
+    // Acute joints can create enormous miters or folded/self-crossing polygons.
+    // Keep only short miters; otherwise use a normalized bevel/bisector point.
+    if (intersection && distance(intersection, point) <= radius * 2.1) return intersection;
+
+    const bisector = normalize(n1.x + n2.x, n1.y + n2.y);
+    if (Math.abs(bisector.x) < 0.0001 && Math.abs(bisector.y) < 0.0001) return a;
+    return { x: point.x + bisector.x * radius, y: point.y + bisector.y * radius };
+  });
+}
+
 function chainEnvelopePath(points: PixelPoint[], radii: number[]): string {
   if (points.length < 2 || points.length !== radii.length) return '';
-
-  const left: PixelPoint[] = [];
-  const right: PixelPoint[] = [];
-
-  points.forEach((point, index) => {
-    const prev = points[Math.max(0, index - 1)];
-    const next = points[Math.min(points.length - 1, index + 1)];
-    const dx = next.x - prev.x;
-    const dy = next.y - prev.y;
-    const length = Math.max(1, Math.hypot(dx, dy));
-    const nx = -dy / length;
-    const ny = dx / length;
-    const radius = radii[index];
-    left.push({ x: point.x + nx * radius, y: point.y + ny * radius });
-    right.push({ x: point.x - nx * radius, y: point.y - ny * radius });
-  });
-
+  const left = offsetPolyline(points, radii, 1);
+  const right = offsetPolyline(points, radii, -1);
   return smoothClosedPixelPath([...left, ...right.reverse()]);
 }
 
@@ -100,8 +131,14 @@ export function PortraitGuides({ guide, style, visual, opacity, frameWidth, tx, 
     const legRadii = [base * 1.35, base * 1.06, base * 0.72];
 
     const limbPath = (chain: Array<NormalizedPoint | undefined>, radii: number[]) => {
-      if (chain.some((point) => !point)) return '';
-      return chainEnvelopePath(chain.map((point) => pixel(point)!), radii);
+      const available = chain
+        .map((point, pointIndex) => point ? { point, radius: radii[pointIndex] } : null)
+        .filter((entry): entry is { point: NormalizedPoint; radius: number } => Boolean(entry));
+      if (available.length < 2) return '';
+      return chainEnvelopePath(
+        available.map(({ point }) => pixel(point)!),
+        available.map(({ radius }) => radius),
+      );
     };
 
     const paths = [
