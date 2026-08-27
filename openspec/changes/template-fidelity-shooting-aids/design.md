@@ -26,13 +26,13 @@ The overlay is presentation-only and SHALL NOT affect matching geometry.
 
 ## Lens hint
 
-GuideSpec may carry a non-binding shooting hint:
+GuideSpec may carry a non-binding lens hint:
 
 ```ts
-shootingHint?: {
-  zoom?: 0.5 | 1 | 1.5 | 2 | 3;
-  basis?: 'exif' | 'template' | 'heuristic';
-  note?: string;
+lensHint?: {
+  zoom: 0.5 | 1 | 2 | 3;
+  basis: 'exif-35mm' | 'template' | 'crop-heuristic';
+  equivalentMm?: number;
 }
 ```
 
