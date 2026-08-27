@@ -6,4 +6,4 @@
 - [x] Keep source URI and Reference Overlay support.
 - [x] Review normalized bounds and renderer behavior across Outline / Skeleton / Ghost / Guide.
 - [x] Update current template/sample fidelity spec.
-- [ ] Complete PR review with no unresolved P0/P1.
+- [x] Complete PR review with no unresolved P0/P1.
