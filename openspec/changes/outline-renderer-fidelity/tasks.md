@@ -8,4 +8,4 @@
 - [x] Reuse fallback envelope geometry for Ghost fill/stroke.
 - [x] Update current `guide-rendering` OpenSpec.
 - [x] Review source-derived Low squat plus approximate templates in all four modes.
-- [ ] Complete PR review with no unresolved P0/P1.
+- [x] Complete PR review with no unresolved P0/P1.
