@@ -28,9 +28,11 @@ const LOW_SQUAT_CONTOUR: NormalizedPoint[] = [
 const LOW_SQUAT_PERSON: PersonGuide = {
   contour: LOW_SQUAT_CONTOUR,
   head: { center: { x: 0.49, y: 0.235 }, rx: 0.073, ry: 0.092, facing: 'front' },
+  // MediaPipe names left/right anatomically: for this front-facing person,
+  // her left side is on the viewer's right side of the frame.
   shoulders: {
-    left: { x: 0.36, y: 0.36 },
-    right: { x: 0.62, y: 0.36 },
+    left: { x: 0.62, y: 0.36 },
+    right: { x: 0.36, y: 0.36 },
   },
   torso: {
     top: { x: 0.49, y: 0.38 },
@@ -38,16 +40,16 @@ const LOW_SQUAT_PERSON: PersonGuide = {
     width: 0.26,
   },
   joints: {
-    leftElbow: { x: 0.27, y: 0.55 },
-    leftWrist: { x: 0.44, y: 0.785 },
-    rightElbow: { x: 0.64, y: 0.56 },
-    rightWrist: { x: 0.52, y: 0.785 },
-    leftHip: { x: 0.42, y: 0.675 },
-    rightHip: { x: 0.56, y: 0.675 },
-    leftKnee: { x: 0.33, y: 0.76 },
-    rightKnee: { x: 0.70, y: 0.75 },
-    leftAnkle: { x: 0.33, y: 0.93 },
-    rightAnkle: { x: 0.61, y: 0.93 },
+    leftElbow: { x: 0.64, y: 0.56 },
+    leftWrist: { x: 0.52, y: 0.785 },
+    rightElbow: { x: 0.27, y: 0.55 },
+    rightWrist: { x: 0.44, y: 0.785 },
+    leftHip: { x: 0.56, y: 0.675 },
+    rightHip: { x: 0.42, y: 0.675 },
+    leftKnee: { x: 0.70, y: 0.75 },
+    rightKnee: { x: 0.33, y: 0.76 },
+    leftAnkle: { x: 0.61, y: 0.93 },
+    rightAnkle: { x: 0.33, y: 0.93 },
   },
 };
 
@@ -65,5 +67,5 @@ export function applySourceDerivedSampleOverride<T extends SampleLike>(sample: T
       lensHint: { zoom: 1, basis: 'crop-heuristic' },
       transform: { dx: 0, dy: 0, scale: 1 },
     },
-  };
+  } as T;
 }
