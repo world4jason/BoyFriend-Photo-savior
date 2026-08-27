@@ -11,9 +11,10 @@
 - [x] Add crop-based zoom fallback.
 - [x] Display `Start at N×` in camera UI.
 - [x] Update current OpenSpec specs.
-- [ ] Complete PR diff review and resolve all P0/P1 before merge.
+- [x] Complete PR diff review and resolve all P0/P1 before merge.
 
 ## Follow-up changes
 
 - Wire native ImagePicker EXIF retrieval into the existing `lensHintFromExif` helper.
 - Replace approximate pose/template geometry with source-derived batches that are visually checked against specific source samples.
+- Tune the shooting-aid panel layout after phone-width visual smoke testing.
