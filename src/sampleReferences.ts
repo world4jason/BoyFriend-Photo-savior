@@ -1,3 +1,4 @@
+import { lensHintFromGuide } from './shooting/lensHint';
 import { GuideSpec, GuideVisualStyle } from './types';
 
 export type SampleReference = {
@@ -17,6 +18,7 @@ const portrait = (people: GuideSpec['people'], crop: GuideSpec['crop'], lookSpac
   people,
   crop,
   lookSpace,
+  fidelity: 'approximate',
   aspectRatio: 0.75,
   transform: { dx: 0, dy: 0, scale: 1 },
 });
@@ -127,6 +129,7 @@ const BASE_REFERENCES: SampleReference[] = [
       ],
       crop: 'tabletop',
       lookSpace: 'center',
+      fidelity: 'approximate',
       aspectRatio: 0.75,
       transform: { dx: 0, dy: 0, scale: 1 },
     },
@@ -152,7 +155,14 @@ const STYLE_BENCHMARKS: SampleReference[] = STYLE_NAMES.map(({ key, title, tag }
   },
 }));
 
+const withShootingMetadata = (sample: SampleReference): SampleReference => {
+  const guide = { ...sample.guide };
+  guide.fidelity = guide.fidelity ?? 'approximate';
+  guide.lensHint = guide.lensHint ?? lensHintFromGuide(guide);
+  return { ...sample, guide };
+};
+
 export const SAMPLE_REFERENCES: SampleReference[] = [
   ...STYLE_BENCHMARKS,
   ...BASE_REFERENCES,
-];
+].map(withShootingMetadata);
