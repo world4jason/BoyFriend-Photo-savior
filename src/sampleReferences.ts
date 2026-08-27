@@ -1,3 +1,4 @@
+import { applySourceDerivedSampleOverride } from './sampleSourceDerivedOverrides';
 import { lensHintFromGuide } from './shooting/lensHint';
 import { GuideSpec, GuideVisualStyle } from './types';
 
@@ -165,4 +166,4 @@ const withShootingMetadata = (sample: SampleReference): SampleReference => {
 export const SAMPLE_REFERENCES: SampleReference[] = [
   ...STYLE_BENCHMARKS,
   ...BASE_REFERENCES,
-].map(withShootingMetadata);
+].map(withShootingMetadata).map(applySourceDerivedSampleOverride);
