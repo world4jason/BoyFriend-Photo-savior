@@ -17,10 +17,12 @@
     "src/analysis/poseLandmarkSanitizer.ts",
     "src/analysis/classifyPortraitCrop.ts",
     "src/segmentation/guideFromContour.ts",
+    "src/segmentation/maskContour.ts",
     "tests/referenceAnalysis.regression.ts",
     "tests/referenceAnalysisTrust.regression.ts",
     "tests/poseLandmarkSanitizer.regression.ts",
     "tests/cropClassification.regression.ts",
-    "tests/lensHint.regression.ts"
+    "tests/lensHint.regression.ts",
+    "tests/maskContour.regression.ts"
   ]
 }

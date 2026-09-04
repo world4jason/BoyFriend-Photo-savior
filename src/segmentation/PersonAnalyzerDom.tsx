@@ -3,8 +3,9 @@
 import { useEffect } from 'react';
 import { poseResultToLandmarks } from '../analysis/poseLandmarkSanitizer';
 import type { PoseLandmark } from '../pose/PoseDetector';
-import type { NormalizedPoint, PersonGuide } from '../types';
+import type { PersonGuide } from '../types';
 import type { PersonContourDetection } from './guideFromContour';
+import { extractPersonContourFromMask } from './maskContour';
 
 const SEGMENTER_MODEL_URL = 'https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmenter/float16/latest/selfie_segmenter.tflite';
 const POSE_MODEL_URL = 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task';
@@ -177,46 +178,13 @@ function faceDirectionFromResult(result: any): FaceDirectionResult | null {
   return { direction, yawDegrees };
 }
 
-const simplifySide = (points: NormalizedPoint[]) => {
-  if (points.length <= 44) return points;
-  const step = Math.max(1, Math.ceil(points.length / 44));
-  return points.filter((_, index) => index % step === 0 || index === points.length - 1);
-};
-
 function maskToOuterContour(mask: ArrayLike<number>, width: number, height: number): PersonContourDetection {
-  const rowStep = Math.max(1, Math.floor(height / 110));
-  const left: NormalizedPoint[] = [];
-  const right: NormalizedPoint[] = [];
-  let foreground = 0;
-
-  for (let y = 0; y < height; y += 1) {
-    let minX = width;
-    let maxX = -1;
-    let rowForeground = 0;
-
-    for (let x = 0; x < width; x += 1) {
-      if (Number(mask[y * width + x]) <= 0) continue;
-      foreground += 1;
-      rowForeground += 1;
-      if (x < minX) minX = x;
-      if (x > maxX) maxX = x;
-    }
-
-    if (y % rowStep === 0 && rowForeground > Math.max(2, width * 0.006) && maxX >= minX) {
-      left.push({ x: minX / width, y: y / height });
-      right.push({ x: maxX / width, y: y / height });
-    }
-  }
-
-  if (left.length < 8 || right.length < 8) {
-    throw new Error('No clear person silhouette was found in this photo.');
-  }
-
+  const result = extractPersonContourFromMask(mask, width, height);
   return {
-    contour: [...simplifySide(left), ...simplifySide(right).reverse()],
+    contour: result.contour,
     maskWidth: width,
     maskHeight: height,
-    foregroundRatio: foreground / Math.max(1, width * height),
+    foregroundRatio: result.foregroundRatio,
   };
 }
 

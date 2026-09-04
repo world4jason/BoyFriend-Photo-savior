@@ -64,6 +64,14 @@ Coverage currently includes:
 - 35mm-equivalent EXIF maps into the supported 0.5× / 1× / 2× / 3× advisory lens buckets;
 - numeric/rational EXIF forms and alternate 35mm-equivalent tag names are accepted;
 - invalid/zero/negative/non-finite focal metadata fails soft instead of creating a bogus lens hint;
-- crop-based lens hints remain the fallback when EXIF is unavailable.
+- crop-based lens hints remain the fallback when EXIF is unavailable;
+- ordered mask-boundary tracing preserves exterior arm/torso concavities instead of filling them with a row-wise hull;
+- separated-leg exterior negative space remains open rather than becoming a solid scanline envelope;
+- disconnected foreground noise cannot pull the primary person's contour bounds away from the largest coherent component;
+- small but sufficiently wide subjects remain eligible as mask resolution increases;
+- long one-pixel segmentation slivers are rejected as insufficient person evidence;
+- a mask with an enclosed hole still produces the largest-area outer loop under the current single-ring GuideSpec contract;
+- generated source contours stay finite, normalized, and inside the bounded 24..128 point budget;
+- a blank mask retains the existing clear `No clear person silhouette` failure.
 
 These suites are intentionally narrower than full application validation. They do not replace `npm run typecheck`, `npm run export:web`, or physical-device camera smoke tests.

@@ -69,11 +69,20 @@ Source:
 | Ghost | same silhouette/envelope geometry as Outline | translucent fill + consistent thin border |
 | Guide | semantic composition annotations | lines / zones / frames / labels / look-space |
 
+### Source-contour fidelity
+
+Renderer style cannot recover geometry that extraction already destroyed. For uploaded references, the segmentation-mask conversion should therefore preserve the **ordered outer boundary** of the primary person, including meaningful exterior concavities such as the gap between an arm and torso or an indentation between separated legs.
+
+A per-row `minX/maxX` envelope is only a fail-soft fallback. As a primary extractor it is an anti-pattern because it fills exterior negative space before Outline/Ghost rendering begins.
+
+The current `PersonGuide.contour` remains a single outer ring. Enclosed interior holes, independent interior separation lines and prop boundaries are later scope; the product should not imply those are represented when they are not.
+
 ### Anti-patterns
 
 Do not regress to:
 
 - rectangular torso + separate parallel rails for every limb segment in Outline;
+- row-wise `minX/maxX` hulls as the primary source-derived contour when ordered mask boundaries are available;
 - joint dots in Outline/Ghost;
 - raw source-photo tracing used as Skeleton;
 - generic rule-of-thirds grid replacing shot-specific Guide annotations;

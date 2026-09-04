@@ -14,7 +14,7 @@
     "build:aab": "npx eas-cli@latest build --platform android --profile production",
     "typecheck": "tsc --noEmit",
     "test:matching": "tsc -p tsconfig.matching-tests.json && node .test-dist/tests/stableMatch.regression.js && node .test-dist/tests/guideMatch.regression.js && node .test-dist/tests/poseCoverage.regression.js",
-    "test:analysis": "tsc -p tsconfig.analysis-tests.json && node .test-dist-analysis/tests/referenceAnalysis.regression.js && node .test-dist-analysis/tests/referenceAnalysisTrust.regression.js && node .test-dist-analysis/tests/poseLandmarkSanitizer.regression.js && node .test-dist-analysis/tests/cropClassification.regression.js && node .test-dist-analysis/tests/lensHint.regression.js",
+    "test:analysis": "tsc -p tsconfig.analysis-tests.json && node .test-dist-analysis/tests/referenceAnalysis.regression.js && node .test-dist-analysis/tests/referenceAnalysisTrust.regression.js && node .test-dist-analysis/tests/poseLandmarkSanitizer.regression.js && node .test-dist-analysis/tests/cropClassification.regression.js && node .test-dist-analysis/tests/lensHint.regression.js && node .test-dist-analysis/tests/maskContour.regression.js",
     "spec:validate": "openspec validate --specs --strict --no-interactive"
   },
   "dependencies": {
