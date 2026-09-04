@@ -40,14 +40,12 @@
 
 ## Validation
 
-<!-- Record only what actually ran. Do not mark checks blocked by Actions billing/runner availability. -->
+<!-- GitHub Actions is intentionally disabled. Record only checks/smokes that actually executed; use `not run` when unavailable. -->
 
-- [ ] `openspec validate --specs`
+- [ ] `npm run spec:validate`
 - [ ] `npm run typecheck`
-- [ ] `npm run test:matching`
-- [ ] `npm run test:analysis`
 - [ ] `npm run export:web`
-- [ ] Web manual smoke test
+- [ ] EAS Hosting / deployed-Web smoke test
 - [ ] iOS physical-device smoke test
 - [ ] Android physical-device smoke test
 
