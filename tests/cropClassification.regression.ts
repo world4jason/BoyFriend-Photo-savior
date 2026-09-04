@@ -20,8 +20,8 @@ const evidence = (overrides: Partial<PortraitCropEvidence> = {}): PortraitCropEv
   hasAnkle: false,
   hasKnee: false,
   hasHip: false,
-  hasArm: false,
-  hasUpperPose: false,
+  shoulderY: undefined,
+  silhouetteTop: 0.08,
   silhouetteBottom: 0.96,
   ...overrides,
 });
@@ -38,15 +38,15 @@ test('trusted hip touching frame bottom stays half rather than full', () => {
   equal(classifyPortraitCrop(evidence({ hasHip: true })), 'half', 'hip crop');
 });
 
-test('trusted arm without lower-body evidence is conservative half crop', () => {
-  equal(classifyPortraitCrop(evidence({ hasArm: true })), 'half', 'arm crop');
+test('shoulders high in the silhouette imply a longer upper-body crop, not headshot', () => {
+  equal(classifyPortraitCrop(evidence({ shoulderY: 0.32 })), 'half', 'high-shoulder crop');
 });
 
-test('trusted face/shoulder-only pose stays headshot even when silhouette touches bottom', () => {
-  equal(classifyPortraitCrop(evidence({ hasUpperPose: true })), 'headshot', 'upper-pose crop');
+test('shoulders near the silhouette bottom imply a tight head-and-shoulders crop', () => {
+  equal(classifyPortraitCrop(evidence({ shoulderY: 0.72 })), 'headshot', 'close-up shoulder crop');
 });
 
-test('segmentation-bottom heuristic remains as fail-soft when pose evidence is unavailable', () => {
+test('segmentation-bottom heuristic remains fail-soft when trusted shoulders/lower anatomy are unavailable', () => {
   equal(classifyPortraitCrop(evidence({ silhouetteBottom: 0.96 })), 'full', 'segmentation full fallback');
   equal(classifyPortraitCrop(evidence({ silhouetteBottom: 0.84 })), 'three-quarter', 'segmentation three-quarter fallback');
   equal(classifyPortraitCrop(evidence({ silhouetteBottom: 0.70 })), 'half', 'segmentation half fallback');
@@ -92,15 +92,35 @@ test('guide integration: trusted hip overrides bottom=0.96 and yields 2x lens hi
   equal(guide.lensHint?.zoom, 2, 'half-body lens hint');
 });
 
-test('guide integration: shoulders-only portrait at bottom=0.96 is headshot with 3x hint', () => {
+test('guide integration: shoulders high in frame keep bottom-touching upper body at half / 2x', () => {
   const guide = buildGuideFromContour(detection([
     landmark('nose', 0.50, 0.16),
     landmark('left_shoulder', 0.40, 0.32),
     landmark('right_shoulder', 0.60, 0.32),
   ]), 3 / 4);
 
-  equal(guide.crop, 'headshot', 'shoulder-only integration crop');
+  equal(guide.crop, 'half', 'longer shoulder-to-bottom span integration crop');
+  equal(guide.lensHint?.zoom, 2, 'longer upper-body lens hint');
+});
+
+test('guide integration: shoulders near bottom create headshot / 3x hint', () => {
+  const guide = buildGuideFromContour(detection([
+    landmark('nose', 0.50, 0.56),
+    landmark('left_shoulder', 0.40, 0.72),
+    landmark('right_shoulder', 0.60, 0.72),
+  ]), 3 / 4);
+
+  equal(guide.crop, 'headshot', 'tight shoulder-to-bottom span integration crop');
   equal(guide.lensHint?.zoom, 3, 'headshot lens hint');
+});
+
+test('guide integration: nose-only pose does not force headshot classification', () => {
+  const guide = buildGuideFromContour(detection([
+    landmark('nose', 0.50, 0.16),
+  ]), 3 / 4);
+
+  equal(guide.crop, 'full', 'nose-only pose falls back to segmentation crop heuristic');
+  equal(guide.lensHint?.zoom, 1, 'nose-only fallback keeps segmentation-derived lens hint');
 });
 
 test('guide integration: no trusted pose keeps segmentation-only full-body fallback', () => {
