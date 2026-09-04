@@ -46,6 +46,18 @@ test('shoulders near the silhouette bottom imply a tight head-and-shoulders crop
   equal(classifyPortraitCrop(evidence({ shoulderY: 0.72 })), 'headshot', 'close-up shoulder crop');
 });
 
+test('exact 38% below-shoulder boundary remains headshot while just over becomes half', () => {
+  const silhouetteHeight = 0.96 - 0.08;
+  const boundaryShoulderY = 0.96 - silhouetteHeight * 0.38;
+  equal(classifyPortraitCrop(evidence({ shoulderY: boundaryShoulderY })), 'headshot', 'exact threshold crop');
+  equal(classifyPortraitCrop(evidence({ shoulderY: boundaryShoulderY - 0.001 })), 'half', 'just-over threshold crop');
+});
+
+test('shoulder outside segmented vertical bounds is ignored for crop classification', () => {
+  equal(classifyPortraitCrop(evidence({ shoulderY: 1.05 })), 'full', 'below-silhouette shoulder falls back');
+  equal(classifyPortraitCrop(evidence({ shoulderY: -0.05 })), 'full', 'above-silhouette shoulder falls back');
+});
+
 test('segmentation-bottom heuristic remains fail-soft when trusted shoulders/lower anatomy are unavailable', () => {
   equal(classifyPortraitCrop(evidence({ silhouetteBottom: 0.96 })), 'full', 'segmentation full fallback');
   equal(classifyPortraitCrop(evidence({ silhouetteBottom: 0.84 })), 'three-quarter', 'segmentation three-quarter fallback');
