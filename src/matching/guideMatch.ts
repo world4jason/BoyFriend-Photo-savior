@@ -301,7 +301,14 @@ export function scorePortraitMatch(targetGuide: GuideSpec, liveGuide: GuideSpec)
     [framingScore, 0.38],
     [scaleScore, 0.27],
   ];
-  if (pose.score != null) weighted.push([pose.score, 0.23]);
+  if (pose.score != null) {
+    weighted.push([pose.score, 0.23]);
+  } else if (poseRequired) {
+    // Required-but-unverified pose intent is not an optional signal. Keep its
+    // weight in the headline aggregate as unsatisfied instead of renormalizing
+    // perfect framing/scale into a misleading 100% score.
+    weighted.push([0, 0.23]);
+  }
   if (faceScore != null) weighted.push([faceScore, 0.12]);
 
   const weightTotal = weighted.reduce((sum, [, weight]) => sum + weight, 0);
