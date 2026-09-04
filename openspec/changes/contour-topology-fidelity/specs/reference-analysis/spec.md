@@ -20,6 +20,17 @@ The system SHALL trace the largest coherent foreground component for the current
 - **WHEN** a person mask contains one large coherent person component plus a much smaller disconnected foreground blob
 - **THEN** the source contour is derived from the large component and the small island does not expand or displace the person's bounds
 
+### Requirement: Primary-contour eligibility remains resolution-safe
+The primary component SHALL be accepted using row-based silhouette evidence compatible with the previous extractor rather than a fixed percentage of total mask area. The evidence gate SHALL keep small but sufficiently wide subjects eligible as mask resolution increases while rejecting long foreground slivers that never reach a believable person width.
+
+#### Scenario: Small subject in a higher-resolution mask
+- **WHEN** the largest coherent component has at least eight rows whose foreground width exceeds the previous scanline evidence threshold
+- **THEN** the component remains eligible for boundary tracing even when its total area is below a fixed percentage of the full mask
+
+#### Scenario: Long one-pixel foreground sliver
+- **WHEN** the largest coherent component spans many rows but never exceeds the minimum per-row foreground width
+- **THEN** analysis does not accept that sliver as a valid person contour solely because it has enough total pixels
+
 ### Requirement: Contour tracing fails soft
 The system SHALL retain a bounded fallback contour path when topology-preserving boundary tracing cannot produce a usable closed outer loop.
 
