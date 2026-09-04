@@ -87,6 +87,7 @@ test('8-anchor full-body target rejects live pose with only 2 covered optional a
   const result = scorePortraitMatch(target, live);
 
   equal(result.poseScore, undefined, '2/8 optional anchors is below majority coverage');
+  equal(result.score, 74, 'required-but-unverified pose weight must prevent a misleading 100% headline');
   equal(result.hint, 'Show the full pose', 'insufficient coverage should request more pose visibility');
   assert(result.status !== 'matched', 'partial upper-body pose must not validate full-body target');
 });
@@ -103,6 +104,7 @@ test('8-anchor full-body target accepts 5 matching optional anchors for pose sco
   const result = scorePortraitMatch(target, live);
 
   equal(result.poseScore, 100, '5/8 optional anchors meets the 60% majority gate');
+  equal(result.score, 100, 'verified pose can contribute its full aggregate weight');
   equal(result.status, 'matched', 'sufficient matching coverage can validate the pose');
   equal(result.hint, '✓ Match', 'sufficient coverage should follow normal matched guidance');
 });
@@ -114,6 +116,7 @@ test('2-anchor target requires both optional anchors rather than one plus should
   const result = scorePortraitMatch(target, live);
 
   equal(result.poseScore, undefined, '1/2 optional anchors is insufficient for a two-anchor pose');
+  equal(result.score, 74, 'missing required pose evidence stays represented in the aggregate');
   equal(result.hint, 'Show the full pose', 'small pose still requires complete two-anchor intent');
   assert(result.status !== 'matched', 'one optional joint plus shoulders must not validate two-anchor pose');
 });
