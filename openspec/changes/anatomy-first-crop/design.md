@@ -33,7 +33,7 @@ Classification:
 if ankle                  -> full
 else if knee              -> three-quarter
 else if hip               -> half
-else if trusted shoulder:
+else if trusted shoulder is inside [top, bottom]:
     belowShoulderRatio = (bottom - shoulderY) / (bottom - top)
     if ratio <= 0.38      -> headshot
     else                  -> half
@@ -54,7 +54,22 @@ The segmentation span below the shoulder is more directly related to how much to
 - shoulder near the bottom of the segmented subject -> tight head/shoulders crop;
 - shoulder high within the segmented subject -> longer upper-body crop.
 
-The `0.38` threshold is intentionally conservative and advisory. It is covered by regression fixtures on both sides of the boundary; future tuning can change this one pure classifier without touching the guide builder.
+The `0.38` threshold is intentionally conservative and advisory. It is covered by regression fixtures at the boundary and on both sides; future tuning can change this one pure classifier without touching the guide builder.
+
+## Cross-model sanity gate
+
+Pose and segmentation are independent model outputs. A finite/confident shoulder can still disagree strongly with the segmented person. Therefore shoulder extent is used only when:
+
+```text
+silhouetteTop and silhouetteBottom are finite
+AND silhouetteBottom > silhouetteTop
+AND shoulderY is finite
+AND silhouetteTop <= shoulderY <= silhouetteBottom
+```
+
+If the shoulder falls outside the segmented subject's vertical bounds, the two model outputs disagree too much for shoulder-based crop classification. The classifier ignores that shoulder evidence and falls back to the lower-confidence segmentation-only heuristic.
+
+This is safer than clamping the shoulder into the silhouette, which would turn an inconsistency into artificial confidence.
 
 ## Lower-body anatomy precedence
 
@@ -68,7 +83,7 @@ This avoids a visible knee/ankle being overridden by an unusual shoulder positio
 
 ## Segmentation-only fallback
 
-If neither trusted lower-body anatomy nor a trusted shoulder is available, preserve the existing bottom-position thresholds. A nose/face point or isolated arm/hand point alone does not force a crop label. This fallback is explicitly lower-confidence fail-soft behavior.
+If neither trusted lower-body anatomy nor a usable trusted shoulder is available, preserve the existing bottom-position thresholds. A nose/face point or isolated arm/hand point alone does not force a crop label. This fallback is explicitly lower-confidence fail-soft behavior.
 
 ## Lens hints
 
