@@ -6,12 +6,15 @@ Live Coach currently treats a pose comparison as usable once four common points 
 
 That is enough for local shape math but not enough to verify the photographer recreated a full-body pose. In the worst case, framing and the few visible joints can allow `matched` / Stable Match / Auto Capture while important target limbs are not actually verified.
 
+There is a second trust problem: when required pose evidence is unavailable, the aggregate score currently drops the pose weight and renormalizes only the available framing/scale components. Perfect framing can therefore display a misleading `100% · CLOSE` beside `Show the full pose`.
+
 ## What changes
 
 - Treat target optional joints as explicit pose intent.
 - Require the live sample to cover a minimum proportion of the target's intended optional joints before pose matching can satisfy the matched-state gate.
 - Keep the current geometric pose score, framing/scale weights, face behavior, and coaching priority unchanged once coverage is sufficient.
-- When coverage is insufficient, return no usable pose score so the existing `Show the full pose` guidance path remains the photographer-facing fallback.
+- When coverage is insufficient, return no usable `poseScore` so the existing `Show the full pose` guidance path remains the photographer-facing fallback.
+- When pose is required but not yet usable, retain the existing 0.23 pose weight in the aggregate with an unsatisfied value of 0 instead of renormalizing framing/scale into an artificially high headline score.
 
 ## Proposed coverage rule
 
