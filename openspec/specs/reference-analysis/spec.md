@@ -94,7 +94,7 @@ Portrait crop metadata SHALL prefer trusted lower-body anatomy over absolute seg
 - **THEN** the system may fall back to the existing segmentation-bottom heuristic and keeps that inference advisory
 
 ### Requirement: Preserve meaningful exterior silhouette topology
-For source-derived portrait geometry, the system SHALL derive an ordered contour from the boundary of the largest coherent foreground component rather than reducing each mask row to only its leftmost and rightmost foreground pixel. The contour SHALL preserve meaningful exterior concavities that remain connected to background, SHALL stay normalized and within a bounded point budget suitable for shared rendering, and SHALL fail soft to the legacy scanline-envelope strategy if topology-preserving tracing cannot produce a usable loop. The current single-ring contour MAY ignore enclosed interior holes until GuideSpec supports multiple contour rings.
+For source-derived portrait geometry, the system SHALL derive an ordered contour from the boundary of the largest coherent foreground component rather than reducing each mask row to only its leftmost and rightmost foreground pixel. The contour SHALL preserve meaningful exterior concavities that remain connected to background, SHALL stay normalized and within a bounded point budget suitable for shared rendering, and SHALL fail soft to the legacy scanline-envelope strategy if topology-preserving tracing cannot produce a usable loop. Primary-component eligibility SHALL use row-based silhouette evidence compatible with the previous extractor rather than a fixed percentage of mask area so higher mask resolution does not disproportionately reject small but sufficiently wide subjects. The current single-ring contour MAY ignore enclosed interior holes until GuideSpec supports multiple contour rings.
 
 #### Scenario: Arm is separated from the torso below the shoulder
 - **WHEN** the segmented primary person remains one coherent component but exterior background is visible between an arm and torso
@@ -107,6 +107,14 @@ For source-derived portrait geometry, the system SHALL derive an ordered contour
 #### Scenario: Small disconnected foreground island
 - **WHEN** a mask contains one large coherent person component plus a much smaller disconnected foreground blob
 - **THEN** the source contour is derived from the large component and the small island does not expand or displace the person's contour bounds
+
+#### Scenario: Small subject in a higher-resolution mask
+- **WHEN** the largest coherent component has at least eight rows whose foreground width exceeds the previous scanline evidence threshold
+- **THEN** the component remains eligible for boundary tracing even when its total area is below a fixed percentage of the full mask
+
+#### Scenario: Long one-pixel foreground sliver
+- **WHEN** the largest coherent component spans many rows but never exceeds the minimum per-row foreground width
+- **THEN** analysis does not accept that sliver as a valid person contour solely because it has enough total pixels
 
 #### Scenario: Boundary trace is unusable
 - **WHEN** foreground exists but topology-preserving boundary tracing cannot produce a usable closed outer loop
