@@ -27,15 +27,11 @@ function test(name: string, run: () => void) {
   }
 }
 
-function mapPoint(point: NormalizedPoint, map: (point: NormalizedPoint) => NormalizedPoint): NormalizedPoint {
-  return map(point);
-}
-
 function mapJoints(joints: PoseJoints | undefined, map: (point: NormalizedPoint) => NormalizedPoint): PoseJoints | undefined {
   if (!joints) return undefined;
   const result: PoseJoints = {};
   for (const [name, point] of Object.entries(joints) as [keyof PoseJoints, NormalizedPoint | undefined][]) {
-    if (point) result[name] = mapPoint(point, map);
+    if (point) result[name] = map(point);
   }
   return result;
 }
@@ -100,33 +96,27 @@ function guide(person: PersonGuide, aspectRatio = 0.75): GuideSpec {
   };
 }
 
-function fitPortraitPointToAspect(point: NormalizedPoint, sourceAspect: number, containerAspect: number): NormalizedPoint {
-  if (containerAspect > sourceAspect) {
-    const frameWidth = sourceAspect / containerAspect;
-    return {
-      x: (1 - frameWidth) / 2 + point.x * frameWidth,
-      y: point.y,
-    };
-  }
-  const frameHeight = containerAspect / sourceAspect;
+/**
+ * Independent fixture for a 3:4 source shown in a 9:16 camera.
+ *
+ * 9/16 ÷ 3/4 = 0.75, so the 3:4 source occupies 75% of the camera height,
+ * leaving 12.5% above and below. This intentionally uses fixed expected
+ * geometry rather than duplicating guideMatch's generic aspect-fit branches.
+ */
+function expectedThreeByFourInNineBySixteen(point: NormalizedPoint): NormalizedPoint {
   return {
     x: point.x,
-    y: (1 - frameHeight) / 2 + point.y * frameHeight,
+    y: 0.125 + point.y * 0.75,
   };
 }
 
 test('aspect-fitted 3:4 target visually aligned in 9:16 camera scores as matched', () => {
-  const targetAspect = 3 / 4;
-  const cameraAspect = 9 / 16;
   const targetPerson = basePerson();
-  const livePerson = mapPerson(
-    targetPerson,
-    (point) => fitPortraitPointToAspect(point, targetAspect, cameraAspect),
-  );
+  const livePerson = mapPerson(targetPerson, expectedThreeByFourInNineBySixteen);
 
   const result = scorePortraitMatch(
-    guide(targetPerson, targetAspect),
-    guide(livePerson, cameraAspect),
+    guide(targetPerson, 3 / 4),
+    guide(livePerson, 9 / 16),
   );
 
   equal(result.status, 'matched', 'visually aligned cross-aspect subject should match');
