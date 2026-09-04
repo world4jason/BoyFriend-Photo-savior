@@ -8,4 +8,4 @@
 - [x] Use even-odd Ghost filling so retained interior rings stay transparent.
 - [x] Add regression coverage for meaningful hole retention, tiny-hole rejection, ring budget, no-hole behavior, and GuideSpec propagation.
 - [x] Sync current `reference-analysis` and `guide-rendering` specs.
-- [ ] Review complete diff and resolve all P0/P1 findings.
+- [x] Review complete diff and resolve all P0/P1 findings.
