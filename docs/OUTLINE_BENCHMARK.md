@@ -64,18 +64,23 @@ Source:
 
 | Mode | Primary geometry | Visual rule |
 | --- | --- | --- |
-| Outline | source contour, else body envelope | smooth outside shape, quiet white line |
+| Outline | source contour + meaningful interior rings, else body envelope | smooth body shape, quiet white line |
 | Skeleton | named pose anchors | explicit center-lines + joint nodes |
-| Ghost | same silhouette/envelope geometry as Outline | translucent fill + consistent thin border |
+| Ghost | same silhouette/envelope geometry as Outline | translucent fill + consistent thin border; interior rings stay transparent |
 | Guide | semantic composition annotations | lines / zones / frames / labels / look-space |
 
 ### Source-contour fidelity
 
-Renderer style cannot recover geometry that extraction already destroyed. For uploaded references, the segmentation-mask conversion should therefore preserve the **ordered outer boundary** of the primary person, including meaningful exterior concavities such as the gap between an arm and torso or an indentation between separated legs.
+Renderer style cannot recover geometry that extraction already destroyed. For uploaded references, the segmentation-mask conversion should therefore preserve the **ordered boundary topology** of the primary person:
+
+- meaningful exterior concavities such as the gap between an arm and torso or an indentation between separated legs;
+- meaningful enclosed background rings such as a hand-on-hip or arm-loop opening when the segmentation mask actually contains that negative space.
 
 A per-row `minX/maxX` envelope is only a fail-soft fallback. As a primary extractor it is an anti-pattern because it fills exterior negative space before Outline/Ghost rendering begins.
 
-The current `PersonGuide.contour` remains a single outer ring. Enclosed interior holes, independent interior separation lines and prop boundaries are later scope; the product should not imply those are represented when they are not.
+`PersonGuide.contour` stores the single outer ring. Optional `PersonGuide.contourHoles` stores a bounded set of meaningful enclosed background rings from the same selected person component. Tiny segmentation pinholes are intentionally filtered. Outline strokes the compound silhouette; Ghost uses even-odd fill so the retained holes remain transparent.
+
+This still does **not** infer semantic overlap/separation lines where no background hole exists. For example, a forearm lying across a torso may need an interior line even though the binary person mask is solid there. That requires separate body-part/pose reasoning rather than drawing skeleton rails inside Outline.
 
 ### Anti-patterns
 
@@ -83,6 +88,8 @@ Do not regress to:
 
 - rectangular torso + separate parallel rails for every limb segment in Outline;
 - row-wise `minX/maxX` hulls as the primary source-derived contour when ordered mask boundaries are available;
+- filling meaningful enclosed source negative space solid in Ghost;
+- turning one-pixel segmentation defects into visible interior rings;
 - joint dots in Outline/Ghost;
 - raw source-photo tracing used as Skeleton;
 - generic rule-of-thirds grid replacing shot-specific Guide annotations;
