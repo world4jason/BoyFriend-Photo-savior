@@ -20,14 +20,24 @@ type BoundaryEdge = {
 const MIN_CONTOUR_POINTS = 24;
 const MAX_CONTOUR_POINTS = 128;
 
-function minimumUsableComponentSize(width: number) {
-  // The legacy extractor required at least eight usable scan rows and each row
-  // had to contain strictly more than max(2, width * 0.006) foreground pixels.
-  // Keep the new connected-component gate no stricter than that old evidence
-  // floor; an area-percentage threshold disproportionately rejects small but
-  // valid people as mask resolution increases.
-  const minimumPixelsPerLegacyRow = Math.floor(Math.max(2, width * 0.006)) + 1;
-  return Math.max(24, minimumPixelsPerLegacyRow * 8);
+function hasLegacyCompatibleComponentEvidence(component: number[], width: number) {
+  // The old scanline extractor required at least eight accepted rows, with
+  // every accepted row containing strictly more than max(2, width * 0.006)
+  // foreground pixels. Count qualifying rows anywhere in the selected primary
+  // component instead of tying eligibility to a resolution-dependent area
+  // percentage or to the old y%rowStep sampling phase.
+  const minimumRowForeground = Math.max(2, width * 0.006);
+  const rowCounts = new Map<number, number>();
+  component.forEach((index) => {
+    const y = Math.floor(index / width);
+    rowCounts.set(y, (rowCounts.get(y) ?? 0) + 1);
+  });
+  let usableRows = 0;
+  for (const count of rowCounts.values()) {
+    if (count > minimumRowForeground) usableRows += 1;
+    if (usableRows >= 8) return true;
+  }
+  return false;
 }
 
 function assertMaskShape(mask: ArrayLike<number>, width: number, height: number) {
@@ -362,10 +372,9 @@ export function extractPersonContourFromMask(
 ): MaskContourResult {
   assertMaskShape(mask, width, height);
   const { binary, foreground } = buildBinaryMask(mask, width, height);
-  const minimumComponent = minimumUsableComponentSize(width);
   const component = largestConnectedComponent(binary, width, height);
 
-  if (foreground === 0 || component.length < minimumComponent) {
+  if (foreground === 0 || !hasLegacyCompatibleComponentEvidence(component, width)) {
     throw new Error('No clear person silhouette was found in this photo.');
   }
 
