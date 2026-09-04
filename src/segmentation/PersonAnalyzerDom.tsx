@@ -1,6 +1,7 @@
 'use dom';
 
 import { useEffect } from 'react';
+import { poseResultToLandmarks } from '../analysis/poseLandmarkSanitizer';
 import type { PoseLandmark } from '../pose/PoseDetector';
 import type { NormalizedPoint, PersonGuide } from '../types';
 import type { PersonContourDetection } from './guideFromContour';
@@ -16,25 +17,6 @@ const VISION_ERROR_KEY = '__bfpsMediaPipeVisionError';
 const VISION_READY_EVENT = 'bfps-mediapipe-vision-ready';
 const VISION_ERROR_EVENT = 'bfps-mediapipe-vision-error';
 const VISION_LOADER_ID = 'bfps-mediapipe-vision-loader';
-
-const POSE_NAMES = [
-  'nose',
-  'left_eye_inner', 'left_eye', 'left_eye_outer',
-  'right_eye_inner', 'right_eye', 'right_eye_outer',
-  'left_ear', 'right_ear',
-  'mouth_left', 'mouth_right',
-  'left_shoulder', 'right_shoulder',
-  'left_elbow', 'right_elbow',
-  'left_wrist', 'right_wrist',
-  'left_pinky', 'right_pinky',
-  'left_index', 'right_index',
-  'left_thumb', 'right_thumb',
-  'left_hip', 'right_hip',
-  'left_knee', 'right_knee',
-  'left_ankle', 'right_ankle',
-  'left_heel', 'right_heel',
-  'left_foot_index', 'right_foot_index',
-] as const;
 
 export type AnalyzerResultPayload = {
   requestId: string;
@@ -158,23 +140,6 @@ function normalizePickerDataUrl(dataUrl: string) {
   const comma = dataUrl.indexOf(',');
   if (comma < 0) return dataUrl;
   return `data:image/jpeg;base64,${dataUrl.slice(comma + 1)}`;
-}
-
-const clamp01 = (value: number) => Math.max(0, Math.min(1, value));
-
-function poseResultToLandmarks(result: any): PoseLandmark[] {
-  const pose = result?.landmarks?.[0];
-  if (!Array.isArray(pose)) return [];
-  return pose.map((point: any, index: number) => ({
-    name: POSE_NAMES[index] ?? `landmark_${index}`,
-    x: clamp01(Number(point?.x ?? 0)),
-    y: clamp01(Number(point?.y ?? 0)),
-    confidence: Number.isFinite(point?.visibility)
-      ? Number(point.visibility)
-      : Number.isFinite(point?.presence)
-        ? Number(point.presence)
-        : undefined,
-  }));
 }
 
 /**
