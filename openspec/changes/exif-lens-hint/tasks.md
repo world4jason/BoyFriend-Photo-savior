@@ -7,4 +7,4 @@
 - [x] Keep crop heuristic fallback for no/invalid EXIF.
 - [x] Add deterministic lens-hint regression coverage.
 - [x] Sync current shooting-aids OpenSpec.
-- [ ] Complete PR diff review with no unresolved P0/P1.
+- [x] Complete PR diff review with no unresolved P0/P1.
