@@ -21,8 +21,9 @@ For this product, trusted anatomy is more meaningful than “the silhouette reac
 - If no trusted lower-body anatomy exists but a trusted shoulder is available, distinguish `headshot` vs `half` from the amount of segmented subject that remains below the shoulder:
   - little body below shoulder -> `headshot`
   - substantial body below shoulder -> `half`
+- Shoulder-based classification is used only when the shoulder lies within the segmented subject's vertical bounds; otherwise pose and segmentation disagree too much and the classifier falls back.
 - A nose/face landmark or isolated hand/arm landmark alone does not force a crop label.
-- Use the previous segmentation-bottom heuristic when neither trusted lower-body anatomy nor a trusted shoulder can support the crop decision.
+- Use the previous segmentation-bottom heuristic when neither trusted lower-body anatomy nor a usable trusted shoulder can support the crop decision.
 - Keep crop-based lens-hint mappings unchanged; better crop metadata naturally produces a better starting zoom hint.
 
 ## Scope
