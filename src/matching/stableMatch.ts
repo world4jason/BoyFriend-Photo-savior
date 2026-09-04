@@ -39,7 +39,12 @@ export function advanceMatchStability(
   const rawMatched = feedback.status === 'matched';
   const severeMiss = isSevereMatchMiss(feedback);
   const sampleCount = previous.sampleCount + 1;
-  const smoothedScore = previous.sampleCount === 0
+
+  // EMA is useful for normal sampled-analysis jitter, but a severe framing/scale
+  // miss is an intentional discontinuity. Carrying a previous high EMA through
+  // that transition would present stale confidence after stable match is already
+  // invalid, so severe misses snap the headline back to the current raw score.
+  const smoothedScore = severeMiss || previous.sampleCount === 0
     ? feedback.score
     : Math.round(previous.smoothedScore * (1 - SCORE_ALPHA) + feedback.score * SCORE_ALPHA);
 
