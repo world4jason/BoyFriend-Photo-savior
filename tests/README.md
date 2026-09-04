@@ -52,6 +52,10 @@ Coverage currently includes:
 - present non-finite visibility/presence values reject the raw landmark;
 - finite presence is used when visibility is absent;
 - missing confidence remains eligible for finite geometry;
-- the guide builder repeats finite/confidence filtering as defense-in-depth.
+- the guide builder repeats finite/confidence filtering as defense-in-depth;
+- portrait crop classification prefers trusted anatomy in the order ankle -> knee -> hip/arm -> upper-pose before using segmentation-bottom fallback;
+- a waist-up subject touching the reference bottom remains `half` and keeps the estimated 2× lens hint;
+- a trusted face/shoulders-only reference touching the bottom remains `headshot` and keeps the estimated 3× lens hint;
+- segmentation-only references retain the previous bottom-position fallback when trusted pose anatomy is unavailable.
 
 These suites are intentionally narrower than full application validation. They do not replace `npm run typecheck`, `npm run export:web`, or physical-device camera smoke tests.
