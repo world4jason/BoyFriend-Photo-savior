@@ -182,6 +182,7 @@ function maskToOuterContour(mask: ArrayLike<number>, width: number, height: numb
   const result = extractPersonContourFromMask(mask, width, height);
   return {
     contour: result.contour,
+    contourHoles: result.contourHoles,
     maskWidth: width,
     maskHeight: height,
     foregroundRatio: result.foregroundRatio,
