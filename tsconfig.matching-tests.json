@@ -1,0 +1,19 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "CommonJS",
+    "moduleResolution": "Node",
+    "strict": true,
+    "skipLibCheck": true,
+    "noEmitOnError": true,
+    "outDir": ".test-dist",
+    "rootDir": ".",
+    "verbatimModuleSyntax": false
+  },
+  "include": [
+    "src/types.ts",
+    "src/matching/guideMatch.ts",
+    "src/matching/stableMatch.ts",
+    "tests/stableMatch.regression.ts"
+  ]
+}
