@@ -13,7 +13,7 @@
     "download:apk": "npx eas-cli@latest build:download --platform android",
     "build:aab": "npx eas-cli@latest build --platform android --profile production",
     "typecheck": "tsc --noEmit",
-    "test:matching": "tsc -p tsconfig.matching-tests.json && node .test-dist/tests/stableMatch.regression.js",
+    "test:matching": "tsc -p tsconfig.matching-tests.json && node .test-dist/tests/stableMatch.regression.js && node .test-dist/tests/guideMatch.regression.js",
     "spec:validate": "openspec validate --specs --strict --no-interactive"
   },
   "dependencies": {
