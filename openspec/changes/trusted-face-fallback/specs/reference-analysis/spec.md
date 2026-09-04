@@ -21,6 +21,6 @@ The system SHALL preserve useful output when optional pose or face analysis fail
 - **WHEN** a pose landmark has NaN/Infinity coordinates or a present confidence value is non-finite
 - **THEN** that landmark is excluded from shared guide geometry and fallback face-direction inference
 
-#### Scenario: Face model unavailable
-- **WHEN** segmentation/pose succeeds but face analysis fails
+#### Scenario: Face model unavailable without trusted fallback landmarks
+- **WHEN** dedicated face analysis fails and trusted pose face landmarks are also unavailable
 - **THEN** the guide remains usable without a precise face-direction cue
