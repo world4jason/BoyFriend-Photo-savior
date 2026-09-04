@@ -1,4 +1,4 @@
-import type { GuideSpec, NormalizedPoint, PersonGuide } from '../types';
+import type { GuideSpec, NormalizedPoint, PersonGuide, PoseJoints } from '../types';
 
 export type MatchStatus = 'searching' | 'adjust' | 'close' | 'matched';
 
@@ -24,6 +24,32 @@ type Box = {
 };
 
 type NamedPoint = { name: string; point: NormalizedPoint };
+
+type PoseCoverage = {
+  targetAnchorCount: number;
+  liveCoveredAnchorCount: number;
+  requiredLiveAnchorCount: number;
+  sufficient: boolean;
+};
+
+type PoseComparison = PoseCoverage & {
+  score?: number;
+  worst?: string;
+  dy?: number;
+};
+
+const OPTIONAL_POSE_ANCHORS: readonly [string, keyof PoseJoints][] = [
+  ['left_elbow', 'leftElbow'],
+  ['right_elbow', 'rightElbow'],
+  ['left_wrist', 'leftWrist'],
+  ['right_wrist', 'rightWrist'],
+  ['left_hip', 'leftHip'],
+  ['right_hip', 'rightHip'],
+  ['left_knee', 'leftKnee'],
+  ['right_knee', 'rightKnee'],
+  ['left_ankle', 'leftAnkle'],
+  ['right_ankle', 'rightAnkle'],
+] as const;
 
 const clamp01 = (value: number) => Math.max(0, Math.min(1, value));
 
@@ -91,27 +117,43 @@ function personPoints(person: PersonGuide): NamedPoint[] {
   );
 
   const joints = person.joints ?? {};
-  const jointEntries: [string, NormalizedPoint | undefined][] = [
-    ['left_elbow', joints.leftElbow],
-    ['right_elbow', joints.rightElbow],
-    ['left_wrist', joints.leftWrist],
-    ['right_wrist', joints.rightWrist],
-    ['left_hip', joints.leftHip],
-    ['right_hip', joints.rightHip],
-    ['left_knee', joints.leftKnee],
-    ['right_knee', joints.rightKnee],
-    ['left_ankle', joints.leftAnkle],
-    ['right_ankle', joints.rightAnkle],
-  ];
-  jointEntries.forEach(([name, point]) => {
+  OPTIONAL_POSE_ANCHORS.forEach(([name, key]) => {
+    const point = joints[key];
     if (point) points.push({ name, point });
   });
 
   return points;
 }
 
-function poseAnchorCount(person: PersonGuide): number {
-  return Object.values(person.joints ?? {}).filter(Boolean).length;
+function poseCoverage(target: PersonGuide, live: PersonGuide): PoseCoverage {
+  const targetJoints = target.joints ?? {};
+  const liveJoints = live.joints ?? {};
+  const targetKeys = OPTIONAL_POSE_ANCHORS
+    .filter(([, key]) => Boolean(targetJoints[key]))
+    .map(([, key]) => key);
+  const targetAnchorCount = targetKeys.length;
+  const liveCoveredAnchorCount = targetKeys.filter((key) => Boolean(liveJoints[key])).length;
+
+  if (targetAnchorCount < 2) {
+    return {
+      targetAnchorCount,
+      liveCoveredAnchorCount,
+      requiredLiveAnchorCount: 0,
+      sufficient: true,
+    };
+  }
+
+  const requiredLiveAnchorCount = Math.min(
+    targetAnchorCount,
+    Math.max(2, Math.ceil(targetAnchorCount * 0.60)),
+  );
+
+  return {
+    targetAnchorCount,
+    liveCoveredAnchorCount,
+    requiredLiveAnchorCount,
+    sufficient: liveCoveredAnchorCount >= requiredLiveAnchorCount,
+  };
 }
 
 function boxFromPoints(points: NormalizedPoint[]): Box {
@@ -145,7 +187,8 @@ function relativePoseScore(
   target: PersonGuide,
   liveGuide: GuideSpec,
   live: PersonGuide,
-): { score?: number; worst?: string; dy?: number } {
+): PoseComparison {
+  const coverage = poseCoverage(target, live);
   const liveAspect = liveGuide.aspectRatio ?? targetGuide.aspectRatio;
   const targetBox = transformedPersonBox(targetGuide, target, liveAspect);
   const liveIdentity: GuideSpec = { ...liveGuide, transform: { dx: 0, dy: 0, scale: 1 } };
@@ -155,11 +198,7 @@ function relativePoseScore(
 
   const jointNames = [
     'left_shoulder', 'right_shoulder',
-    'left_elbow', 'right_elbow',
-    'left_wrist', 'right_wrist',
-    'left_hip', 'right_hip',
-    'left_knee', 'right_knee',
-    'left_ankle', 'right_ankle',
+    ...OPTIONAL_POSE_ANCHORS.map(([name]) => name),
   ];
 
   let distanceSum = 0;
@@ -188,9 +227,10 @@ function relativePoseScore(
     }
   }
 
-  if (count < 4) return {};
+  if (count < 4 || !coverage.sufficient) return coverage;
   const averageDistance = distanceSum / count;
   return {
+    ...coverage,
     score: clamp01(1 - averageDistance / 0.23),
     worst: worstName,
     dy: worstDy,
@@ -245,9 +285,11 @@ export function scorePortraitMatch(targetGuide: GuideSpec, liveGuide: GuideSpec)
   const scaleScore = clamp01(1 - scaleError / 0.52);
 
   const pose = relativePoseScore(targetGuide, target, liveGuide, live);
-  // If the target itself encodes a meaningful pose, losing live pose landmarks
-  // must never silently turn matching into framing-only and unlock Auto Capture.
-  const poseRequired = poseAnchorCount(target) >= 2;
+  // A target with explicit optional joints encodes pose intent. Missing most of
+  // those joints must not silently turn matching into framing-only and unlock
+  // Stable Match / Auto Capture. relativePoseScore only exposes a score after
+  // majority target-anchor coverage is available.
+  const poseRequired = pose.targetAnchorCount >= 2;
   const targetFacing = target.head.facing;
   const liveFacing = live.head.facing;
   let faceScore: number | undefined;
