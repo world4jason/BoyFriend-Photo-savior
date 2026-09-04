@@ -167,12 +167,17 @@ export function buildGuideFromContour(
     joints,
   };
 
+  const trustedShoulders = [leftShoulder, rightShoulder].filter(Boolean) as PoseLandmark[];
+  const trustedShoulderY = trustedShoulders.length > 0
+    ? trustedShoulders.reduce((sum, shoulder) => sum + shoulder.y, 0) / trustedShoulders.length
+    : undefined;
+
   const crop = classifyPortraitCrop({
     hasAnkle: Boolean(joints.leftAnkle || joints.rightAnkle),
     hasKnee: Boolean(joints.leftKnee || joints.rightKnee),
     hasHip: Boolean(joints.leftHip || joints.rightHip),
-    hasArm: Boolean(joints.leftElbow || joints.rightElbow || joints.leftWrist || joints.rightWrist),
-    hasUpperPose: Boolean(nose || leftShoulder || rightShoulder),
+    shoulderY: trustedShoulderY,
+    silhouetteTop: top,
     silhouetteBottom: bottom,
   });
 
