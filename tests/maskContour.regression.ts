@@ -41,6 +41,15 @@ function pointInPolygon(point: NormalizedPoint, polygon: NormalizedPoint[]) {
   return inside;
 }
 
+function silhouetteError(mask: Uint8Array, width: number, height: number) {
+  try {
+    extractPersonContourFromMask(mask, width, height);
+    return '';
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error);
+  }
+}
+
 function assertBoundedNormalizedContour(contour: NormalizedPoint[]) {
   ok(contour.length >= 24, `expected at least 24 contour points, got ${contour.length}`);
   ok(contour.length <= 128, `expected at most 128 contour points, got ${contour.length}`);
@@ -118,6 +127,14 @@ test('small valid subject remains eligible as mask resolution increases', () => 
   assertBoundedNormalizedContour(result.contour);
 });
 
+test('skinny segmentation sliver does not become a valid person component', () => {
+  const width = 512;
+  const height = 512;
+  const mask = makeMask(width, height, (x, y) => x === 255 && y >= 180 && y <= 300);
+  const message = silhouetteError(mask, width, height);
+  ok(message.includes('No clear person silhouette'), `unexpected skinny-sliver result: ${message || 'accepted'}`);
+});
+
 test('single-ring contour chooses the outer boundary when the component contains a hole', () => {
   const width = 32;
   const height = 32;
@@ -144,12 +161,7 @@ test('single-ring contour chooses the outer boundary when the component contains
 });
 
 test('blank mask still fails with a clear silhouette error', () => {
-  let message = '';
-  try {
-    extractPersonContourFromMask(new Uint8Array(20 * 20), 20, 20);
-  } catch (error) {
-    message = error instanceof Error ? error.message : String(error);
-  }
+  const message = silhouetteError(new Uint8Array(20 * 20), 20, 20);
   ok(message.includes('No clear person silhouette'), `unexpected error: ${message}`);
 });
 
