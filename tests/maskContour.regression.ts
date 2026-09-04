@@ -108,6 +108,16 @@ test('largest connected component ignores a small disconnected foreground island
   ok(minY > 0.10, `noise island must not pull contour upward; minY=${minY}`);
 });
 
+test('small valid subject remains eligible as mask resolution increases', () => {
+  const width = 512;
+  const height = 512;
+  const mask = makeMask(width, height, (x, y) => x >= 252 && x <= 255 && y >= 220 && y <= 251);
+
+  const result = extractPersonContourFromMask(mask, width, height);
+  equal(result.strategy, 'boundary', 'small-subject strategy');
+  assertBoundedNormalizedContour(result.contour);
+});
+
 test('single-ring contour chooses the outer boundary when the component contains a hole', () => {
   const width = 32;
   const height = 32;
