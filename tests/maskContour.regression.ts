@@ -70,6 +70,25 @@ test('boundary tracing preserves an exterior arm/torso concavity', () => {
   ok(!pointInPolygon({ x: 10.2 / width, y: 12.2 / height }, result.contour), 'exterior gap must not be filled by a scanline hull');
 });
 
+test('boundary tracing preserves exterior negative space between separated legs', () => {
+  const width = 30;
+  const height = 34;
+  const mask = makeMask(width, height, (x, y) => {
+    const torso = x >= 9 && x <= 20 && y >= 3 && y <= 16;
+    const leftLeg = x >= 9 && x <= 12 && y >= 17 && y <= 31;
+    const rightLeg = x >= 17 && x <= 20 && y >= 17 && y <= 31;
+    return torso || leftLeg || rightLeg;
+  });
+
+  const result = extractPersonContourFromMask(mask, width, height);
+  equal(result.strategy, 'boundary', 'separated-leg strategy');
+  assertBoundedNormalizedContour(result.contour);
+
+  ok(pointInPolygon({ x: 10.5 / width, y: 24.5 / height }, result.contour), 'left leg should stay inside');
+  ok(pointInPolygon({ x: 18.5 / width, y: 24.5 / height }, result.contour), 'right leg should stay inside');
+  ok(!pointInPolygon({ x: 15 / width, y: 24.5 / height }, result.contour), 'open leg gap must remain exterior background');
+});
+
 test('largest connected component ignores a small disconnected foreground island', () => {
   const width = 32;
   const height = 32;
