@@ -5,6 +5,8 @@ import { lensHintFromGuide } from '../shooting/lensHint';
 
 export type PersonContourDetection = {
   contour: NormalizedPoint[];
+  /** Optional enclosed background rings from the same selected person mask. */
+  contourHoles?: NormalizedPoint[][];
   maskWidth: number;
   maskHeight: number;
   foregroundRatio: number;
@@ -147,6 +149,7 @@ export function buildGuideFromContour(
 
   const person: PersonGuide = {
     contour: detection.contour,
+    contourHoles: detection.contourHoles?.length ? detection.contourHoles : undefined,
     head: {
       center: nose
         ? { x: headCenterX, y: headCenterY }

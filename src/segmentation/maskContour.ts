@@ -4,6 +4,8 @@ export type MaskContourStrategy = 'boundary' | 'scanline-fallback';
 
 export type MaskContourResult = {
   contour: NormalizedPoint[];
+  /** Enclosed background rings belonging to the same selected person component. */
+  contourHoles: NormalizedPoint[][];
   foregroundRatio: number;
   strategy: MaskContourStrategy;
 };
@@ -17,8 +19,19 @@ type BoundaryEdge = {
   direction: Direction;
 };
 
+type TracedTopology = {
+  contour: NormalizedPoint[];
+  contourHoles: NormalizedPoint[][];
+};
+
 const MIN_CONTOUR_POINTS = 24;
 const MAX_CONTOUR_POINTS = 128;
+const MIN_HOLE_POINTS = 12;
+const MAX_HOLE_POINTS = 64;
+const MAX_HOLE_RINGS = 4;
+const MIN_HOLE_AREA_PIXELS = 12;
+const MIN_HOLE_AREA_RATIO = 0.0015;
+const MIN_HOLE_SPAN_PIXELS = 3;
 
 function hasLegacyCompatibleComponentEvidence(component: number[], width: number) {
   // The old scanline extractor required at least eight accepted rows, with
@@ -119,6 +132,20 @@ function polygonArea(points: PixelPoint[]) {
   return area / 2;
 }
 
+function ringSpan(points: PixelPoint[]) {
+  const xs = points.map((point) => point.x);
+  const ys = points.map((point) => point.y);
+  return {
+    width: Math.max(...xs) - Math.min(...xs),
+    height: Math.max(...ys) - Math.min(...ys),
+  };
+}
+
+/**
+ * Trace every closed edge loop of one selected 4-connected foreground
+ * component. Outer and enclosed-hole loops use opposite winding because every
+ * emitted edge keeps foreground on the right side of the walk.
+ */
 function boundaryLoops(selected: Uint8Array, component: number[], width: number, height: number): PixelPoint[][] {
   const vertexWidth = width + 1;
   const edges: BoundaryEdge[] = [];
@@ -141,7 +168,8 @@ function boundaryLoops(selected: Uint8Array, component: number[], width: number,
     const x = index % width;
     const y = Math.floor(index / width);
 
-    // Clockwise edges keep foreground on the right side of the walk.
+    // Clockwise outer edges keep foreground on the right side of the walk;
+    // enclosed background holes therefore naturally use the opposite winding.
     if (!isForeground(x, y - 1)) addEdge({ x, y }, { x: x + 1, y }, 0);
     if (!isForeground(x + 1, y)) addEdge({ x: x + 1, y }, { x: x + 1, y: y + 1 }, 1);
     if (!isForeground(x, y + 1)) addEdge({ x: x + 1, y: y + 1 }, { x, y: y + 1 }, 2);
@@ -289,7 +317,17 @@ function resampleClosed(points: NormalizedPoint[], targetCount: number): Normali
   return result;
 }
 
-function boundedContour(points: NormalizedPoint[], width: number, height: number) {
+/**
+ * Keep the exact RDP-based simplification policy introduced with the topology
+ * tracer for the outer contour, while allowing tighter budgets for hole rings.
+ */
+function boundedContour(
+  points: NormalizedPoint[],
+  width: number,
+  height: number,
+  minPoints = MIN_CONTOUR_POINTS,
+  maxPoints = MAX_CONTOUR_POINTS,
+) {
   const baseEpsilon = Math.max(
     0.0015,
     Math.min(0.006, 0.75 / Math.max(1, Math.min(width, height))),
@@ -297,15 +335,15 @@ function boundedContour(points: NormalizedPoint[], width: number, height: number
   let epsilon = baseEpsilon;
   let simplified = simplifyClosed(points, epsilon);
 
-  for (let attempt = 0; attempt < 8 && simplified.length > MAX_CONTOUR_POINTS; attempt += 1) {
+  for (let attempt = 0; attempt < 8 && simplified.length > maxPoints; attempt += 1) {
     epsilon *= 1.35;
     simplified = simplifyClosed(points, epsilon);
   }
 
-  if (simplified.length > MAX_CONTOUR_POINTS) {
-    simplified = resampleClosed(simplified, MAX_CONTOUR_POINTS);
-  } else if (simplified.length < MIN_CONTOUR_POINTS) {
-    simplified = resampleClosed(simplified, MIN_CONTOUR_POINTS);
+  if (simplified.length > maxPoints) {
+    simplified = resampleClosed(simplified, maxPoints);
+  } else if (simplified.length < minPoints) {
+    simplified = resampleClosed(simplified, minPoints);
   }
 
   return simplified.map((point) => ({
@@ -314,25 +352,55 @@ function boundedContour(points: NormalizedPoint[], width: number, height: number
   }));
 }
 
-function traceOuterContour(
+function normalizeLoop(loop: PixelPoint[], width: number, height: number) {
+  return loop.map((point) => ({
+    x: point.x / width,
+    y: point.y / height,
+  }));
+}
+
+function traceContourTopology(
   selected: Uint8Array,
   component: number[],
   width: number,
   height: number,
-): NormalizedPoint[] | null {
+): TracedTopology | null {
   const loops = boundaryLoops(selected, component, width, height);
   if (!loops.length) return null;
 
-  const outer = loops.reduce((best, loop) =>
-    Math.abs(polygonArea(loop)) > Math.abs(polygonArea(best)) ? loop : best,
-  loops[0]);
-  if (outer.length < 4 || Math.abs(polygonArea(outer)) < 4) return null;
+  const entries = loops
+    .map((loop, index) => ({ loop, index, area: polygonArea(loop) }))
+    .filter((entry) => entry.loop.length >= 4 && Math.abs(entry.area) >= 4);
+  if (!entries.length) return null;
 
-  const normalized = outer.map((point) => ({
-    x: point.x / width,
-    y: point.y / height,
-  }));
-  return boundedContour(normalized, width, height);
+  const outer = entries.reduce((best, entry) =>
+    Math.abs(entry.area) > Math.abs(best.area) ? entry : best,
+  entries[0]);
+  const outerArea = Math.abs(outer.area);
+  const minimumHoleArea = Math.max(MIN_HOLE_AREA_PIXELS, outerArea * MIN_HOLE_AREA_RATIO);
+
+  const contourHoles = entries
+    .filter((entry) => entry.index !== outer.index)
+    .filter((entry) => entry.area * outer.area < 0)
+    .filter((entry) => Math.abs(entry.area) >= minimumHoleArea)
+    .filter((entry) => {
+      const span = ringSpan(entry.loop);
+      return span.width >= MIN_HOLE_SPAN_PIXELS && span.height >= MIN_HOLE_SPAN_PIXELS;
+    })
+    .sort((a, b) => Math.abs(b.area) - Math.abs(a.area))
+    .slice(0, MAX_HOLE_RINGS)
+    .map((entry) => boundedContour(
+      normalizeLoop(entry.loop, width, height),
+      width,
+      height,
+      MIN_HOLE_POINTS,
+      MAX_HOLE_POINTS,
+    ));
+
+  return {
+    contour: boundedContour(normalizeLoop(outer.loop, width, height), width, height),
+    contourHoles,
+  };
 }
 
 function scanlineFallback(selected: Uint8Array, width: number, height: number): NormalizedPoint[] {
@@ -379,10 +447,10 @@ export function extractPersonContourFromMask(
   }
 
   const selected = componentMask(component, width * height);
-  const traced = traceOuterContour(selected, component, width, height);
-  if (traced && traced.length >= MIN_CONTOUR_POINTS) {
+  const traced = traceContourTopology(selected, component, width, height);
+  if (traced && traced.contour.length >= MIN_CONTOUR_POINTS) {
     return {
-      contour: traced,
+      ...traced,
       foregroundRatio: foreground / Math.max(1, width * height),
       strategy: 'boundary',
     };
@@ -390,6 +458,7 @@ export function extractPersonContourFromMask(
 
   return {
     contour: scanlineFallback(selected, width, height),
+    contourHoles: [],
     foregroundRatio: foreground / Math.max(1, width * height),
     strategy: 'scanline-fallback',
   };

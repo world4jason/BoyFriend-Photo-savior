@@ -1,3 +1,4 @@
+import { buildGuideFromContour } from '../src/segmentation/guideFromContour';
 import { extractPersonContourFromMask } from '../src/segmentation/maskContour';
 import type { NormalizedPoint } from '../src/types';
 
@@ -50,14 +51,18 @@ function silhouetteError(mask: Uint8Array, width: number, height: number) {
   }
 }
 
-function assertBoundedNormalizedContour(contour: NormalizedPoint[]) {
-  ok(contour.length >= 24, `expected at least 24 contour points, got ${contour.length}`);
-  ok(contour.length <= 128, `expected at most 128 contour points, got ${contour.length}`);
-  contour.forEach((point, index) => {
-    ok(Number.isFinite(point.x) && Number.isFinite(point.y), `point ${index} must be finite`);
-    ok(point.x >= 0 && point.x <= 1, `point ${index}.x must stay normalized`);
-    ok(point.y >= 0 && point.y <= 1, `point ${index}.y must stay normalized`);
+function assertNormalizedRing(ring: NormalizedPoint[], minPoints: number, maxPoints: number, label: string) {
+  ok(ring.length >= minPoints, `${label}: expected at least ${minPoints} points, got ${ring.length}`);
+  ok(ring.length <= maxPoints, `${label}: expected at most ${maxPoints} points, got ${ring.length}`);
+  ring.forEach((point, index) => {
+    ok(Number.isFinite(point.x) && Number.isFinite(point.y), `${label} point ${index} must be finite`);
+    ok(point.x >= 0 && point.x <= 1, `${label} point ${index}.x must stay normalized`);
+    ok(point.y >= 0 && point.y <= 1, `${label} point ${index}.y must stay normalized`);
   });
+}
+
+function assertBoundedNormalizedContour(contour: NormalizedPoint[]) {
+  assertNormalizedRing(contour, 24, 128, 'outer contour');
 }
 
 test('boundary tracing preserves an exterior arm/torso concavity', () => {
@@ -73,6 +78,7 @@ test('boundary tracing preserves an exterior arm/torso concavity', () => {
   const result = extractPersonContourFromMask(mask, width, height);
   equal(result.strategy, 'boundary', 'contour extraction strategy');
   assertBoundedNormalizedContour(result.contour);
+  equal(result.contourHoles.length, 0, 'open arm gap is exterior, not an enclosed hole');
 
   ok(pointInPolygon({ x: 6.2 / width, y: 12.2 / height }, result.contour), 'arm point should stay inside');
   ok(pointInPolygon({ x: 15.2 / width, y: 12.2 / height }, result.contour), 'torso point should stay inside');
@@ -135,7 +141,7 @@ test('skinny segmentation sliver does not become a valid person component', () =
   ok(message.includes('No clear person silhouette'), `unexpected skinny-sliver result: ${message || 'accepted'}`);
 });
 
-test('single-ring contour chooses the outer boundary when the component contains a hole', () => {
+test('meaningful enclosed negative space is retained as an interior contour ring', () => {
   const width = 32;
   const height = 32;
   const mask = makeMask(width, height, (x, y) => {
@@ -147,17 +153,63 @@ test('single-ring contour chooses the outer boundary when the component contains
   const result = extractPersonContourFromMask(mask, width, height);
   equal(result.strategy, 'boundary', 'hole-containing component strategy');
   assertBoundedNormalizedContour(result.contour);
+  equal(result.contourHoles.length, 1, 'meaningful enclosed hole count');
+  assertNormalizedRing(result.contourHoles[0], 12, 64, 'interior ring');
 
-  const xs = result.contour.map((point) => point.x);
-  const ys = result.contour.map((point) => point.y);
-  ok(Math.min(...xs) <= 5 / width + 0.001, 'outer left edge should be preserved');
-  ok(Math.max(...xs) >= 27 / width - 0.001, 'outer right edge should be preserved');
-  ok(Math.min(...ys) <= 4 / height + 0.001, 'outer top edge should be preserved');
-  ok(Math.max(...ys) >= 28 / height - 0.001, 'outer bottom edge should be preserved');
-  ok(
-    pointInPolygon({ x: 15 / width, y: 15 / height }, result.contour),
-    'current one-ring GuideSpec intentionally represents the outer loop rather than an interior hole ring',
-  );
+  const center = { x: 15 / width, y: 15 / height };
+  ok(pointInPolygon(center, result.contour), 'hole center still lies geometrically inside the outer contour');
+  ok(pointInPolygon(center, result.contourHoles[0]), 'interior ring must surround the enclosed background region');
+
+  const guide = buildGuideFromContour({
+    contour: result.contour,
+    contourHoles: result.contourHoles,
+    maskWidth: width,
+    maskHeight: height,
+    foregroundRatio: result.foregroundRatio,
+  }, 1);
+  equal(guide.people[0].contourHoles?.length, 1, 'GuideSpec must preserve source-derived interior rings');
+});
+
+test('tiny segmentation pinhole is ignored rather than rendered as silhouette noise', () => {
+  const width = 32;
+  const height = 32;
+  const mask = makeMask(width, height, (x, y) => {
+    const outer = x >= 5 && x <= 26 && y >= 4 && y <= 27;
+    const pinhole = x === 15 && y === 15;
+    return outer && !pinhole;
+  });
+
+  const result = extractPersonContourFromMask(mask, width, height);
+  equal(result.contourHoles.length, 0, 'one-pixel pinhole should be rejected');
+});
+
+test('interior contour-ring count is bounded to the four largest meaningful holes', () => {
+  const width = 64;
+  const height = 64;
+  const holes = [
+    [10, 13, 12, 15],
+    [20, 23, 12, 15],
+    [30, 33, 12, 15],
+    [40, 43, 12, 15],
+    [50, 53, 12, 15],
+  ];
+  const mask = makeMask(width, height, (x, y) => {
+    const outer = x >= 4 && x <= 59 && y >= 4 && y <= 59;
+    const inHole = holes.some(([left, right, top, bottom]) => x >= left && x <= right && y >= top && y <= bottom);
+    return outer && !inHole;
+  });
+
+  const result = extractPersonContourFromMask(mask, width, height);
+  equal(result.contourHoles.length, 4, 'interior ring budget');
+  result.contourHoles.forEach((ring, index) => assertNormalizedRing(ring, 12, 64, `interior ring ${index}`));
+});
+
+test('ordinary solid silhouette keeps an empty interior-ring list', () => {
+  const width = 32;
+  const height = 32;
+  const mask = makeMask(width, height, (x, y) => x >= 9 && x <= 22 && y >= 4 && y <= 28);
+  const result = extractPersonContourFromMask(mask, width, height);
+  equal(result.contourHoles.length, 0, 'solid silhouette interior rings');
 });
 
 test('blank mask still fails with a clear silhouette error', () => {

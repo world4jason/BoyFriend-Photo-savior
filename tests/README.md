@@ -70,8 +70,11 @@ Coverage currently includes:
 - disconnected foreground noise cannot pull the primary person's contour bounds away from the largest coherent component;
 - small but sufficiently wide subjects remain eligible as mask resolution increases;
 - long one-pixel segmentation slivers are rejected as insufficient person evidence;
-- a mask with an enclosed hole still produces the largest-area outer loop under the current single-ring GuideSpec contract;
-- generated source contours stay finite, normalized, and inside the bounded 24..128 point budget;
+- meaningful enclosed background holes are retained as bounded source-derived interior contour rings and propagate into `GuideSpec`;
+- tiny segmentation pinholes are rejected instead of becoming visible silhouette noise;
+- interior-ring count is bounded to the four largest meaningful holes;
+- ordinary solid silhouettes keep an empty interior-ring list;
+- generated outer contours stay finite, normalized, and inside the bounded 24..128 point budget; retained interior rings stay inside 12..64 points each;
 - a blank mask retains the existing clear `No clear person silhouette` failure.
 
 These suites are intentionally narrower than full application validation. They do not replace `npm run typecheck`, `npm run export:web`, or physical-device camera smoke tests.
