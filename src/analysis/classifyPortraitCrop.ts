@@ -16,17 +16,27 @@ const HEADSHOT_BELOW_SHOULDER_RATIO = 0.38;
  * evidence remains, use how much segmented body extends below the shoulder to
  * distinguish a tight head/shoulders crop from a longer upper-body crop.
  *
- * The absolute segmentation-bottom heuristic is reserved for the case where
- * no trusted anatomy is available at all.
+ * A shoulder must also lie inside the segmented subject's vertical bounds;
+ * otherwise the pose/segmentation models disagree too much for that shoulder
+ * to be safe crop evidence and we fall back to the segmentation heuristic.
  */
 export function classifyPortraitCrop(evidence: PortraitCropEvidence): GuideSpec['crop'] {
   if (evidence.hasAnkle) return 'full';
   if (evidence.hasKnee) return 'three-quarter';
   if (evidence.hasHip) return 'half';
 
-  if (evidence.shoulderY != null && Number.isFinite(evidence.shoulderY)) {
-    const silhouetteHeight = Math.max(0.001, evidence.silhouetteBottom - evidence.silhouetteTop);
-    const belowShoulderRatio = Math.max(0, evidence.silhouetteBottom - evidence.shoulderY) / silhouetteHeight;
+  const hasFiniteSilhouetteBounds = Number.isFinite(evidence.silhouetteTop)
+    && Number.isFinite(evidence.silhouetteBottom)
+    && evidence.silhouetteBottom > evidence.silhouetteTop;
+  const shoulderIsUsable = evidence.shoulderY != null
+    && Number.isFinite(evidence.shoulderY)
+    && hasFiniteSilhouetteBounds
+    && evidence.shoulderY >= evidence.silhouetteTop
+    && evidence.shoulderY <= evidence.silhouetteBottom;
+
+  if (shoulderIsUsable) {
+    const silhouetteHeight = evidence.silhouetteBottom - evidence.silhouetteTop;
+    const belowShoulderRatio = (evidence.silhouetteBottom - evidence.shoulderY!) / silhouetteHeight;
     return belowShoulderRatio <= HEADSHOT_BELOW_SHOULDER_RATIO ? 'headshot' : 'half';
   }
 
