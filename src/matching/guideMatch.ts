@@ -1,4 +1,4 @@
-import { GuideSpec, NormalizedPoint, PersonGuide } from '../types';
+import type { GuideSpec, NormalizedPoint, PersonGuide } from '../types';
 
 export type MatchStatus = 'searching' | 'adjust' | 'close' | 'matched';
 
