@@ -48,7 +48,10 @@ Coverage currently includes:
 - dedicated Face Landmarker direction overrides conflicting low-confidence pose fallback points;
 - low-confidence pose face landmarks cannot invent a precise left/right direction;
 - trusted pose face landmarks can provide a fallback direction when dedicated face analysis is unavailable;
-- NaN/Infinity pose coordinates are excluded from shared guide geometry;
-- non-finite pose confidence values are rejected rather than treated as trusted.
+- raw MediaPipe NaN/Infinity coordinates are dropped **before** finite values are clamped into `0..1`;
+- present non-finite visibility/presence values reject the raw landmark;
+- finite presence is used when visibility is absent;
+- missing confidence remains eligible for finite geometry;
+- the guide builder repeats finite/confidence filtering as defense-in-depth.
 
 These suites are intentionally narrower than full application validation. They do not replace `npm run typecheck`, `npm run export:web`, or physical-device camera smoke tests.
