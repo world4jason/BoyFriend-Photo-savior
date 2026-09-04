@@ -87,6 +87,12 @@ export type PersonGuide = {
     rx: number;
     ry: number;
     facing: 'left' | 'right' | 'front';
+    /**
+     * Whether `facing` is supported by usable face/pose evidence. `front` with
+     * `facingKnown=false` is a neutral/no-precise-turn fallback, not a claim
+     * that the subject is physically frontal. Optional for legacy templates.
+     */
+    facingKnown?: boolean;
   };
   shoulders: {
     left: NormalizedPoint;
