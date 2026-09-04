@@ -10,6 +10,7 @@ export type PortraitCropEvidence = {
 };
 
 const HEADSHOT_BELOW_SHOULDER_RATIO = 0.38;
+const RATIO_EPSILON = 1e-9;
 
 /**
  * Prefer semantic/trusted lower-body anatomy first. When only trusted shoulder
@@ -37,7 +38,7 @@ export function classifyPortraitCrop(evidence: PortraitCropEvidence): GuideSpec[
   if (shoulderIsUsable) {
     const silhouetteHeight = evidence.silhouetteBottom - evidence.silhouetteTop;
     const belowShoulderRatio = (evidence.silhouetteBottom - evidence.shoulderY!) / silhouetteHeight;
-    return belowShoulderRatio <= HEADSHOT_BELOW_SHOULDER_RATIO ? 'headshot' : 'half';
+    return belowShoulderRatio <= HEADSHOT_BELOW_SHOULDER_RATIO + RATIO_EPSILON ? 'headshot' : 'half';
   }
 
   if (evidence.silhouetteBottom > 0.92) return 'full';
