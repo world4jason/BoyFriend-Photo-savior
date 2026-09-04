@@ -93,6 +93,29 @@ Portrait crop metadata SHALL prefer trusted lower-body anatomy over absolute seg
 - **WHEN** neither trusted lower-body anatomy nor a usable trusted shoulder is available
 - **THEN** the system may fall back to the existing segmentation-bottom heuristic and keeps that inference advisory
 
+### Requirement: Preserve meaningful exterior silhouette topology
+For source-derived portrait geometry, the system SHALL derive an ordered contour from the boundary of the largest coherent foreground component rather than reducing each mask row to only its leftmost and rightmost foreground pixel. The contour SHALL preserve meaningful exterior concavities that remain connected to background, SHALL stay normalized and within a bounded point budget suitable for shared rendering, and SHALL fail soft to the legacy scanline-envelope strategy if topology-preserving tracing cannot produce a usable loop. The current single-ring contour MAY ignore enclosed interior holes until GuideSpec supports multiple contour rings.
+
+#### Scenario: Arm is separated from the torso below the shoulder
+- **WHEN** the segmented primary person remains one coherent component but exterior background is visible between an arm and torso
+- **THEN** the source contour follows that arm/torso concavity instead of filling the gap with a row-wise hull
+
+#### Scenario: Legs contain exterior negative space
+- **WHEN** the segmented primary person has an exterior indentation between separated legs
+- **THEN** the source contour preserves that indentation when it belongs to the outer boundary
+
+#### Scenario: Small disconnected foreground island
+- **WHEN** a mask contains one large coherent person component plus a much smaller disconnected foreground blob
+- **THEN** the source contour is derived from the large component and the small island does not expand or displace the person's contour bounds
+
+#### Scenario: Boundary trace is unusable
+- **WHEN** foreground exists but topology-preserving boundary tracing cannot produce a usable closed outer loop
+- **THEN** analysis falls back to the scanline-envelope strategy for the selected primary component rather than failing solely because the improved tracer failed
+
+#### Scenario: Foreground component contains an enclosed background hole
+- **WHEN** the selected primary component contains both an outer boundary and one or more enclosed background holes
+- **THEN** the system stores the largest-area outer loop as the current single `PersonGuide.contour` and does not claim separate hole-ring fidelity
+
 ### Requirement: One primary person for arbitrary references
 The current automatic reference pipeline SHALL target one primary person and SHALL not claim arbitrary multi-person instance extraction.
 
