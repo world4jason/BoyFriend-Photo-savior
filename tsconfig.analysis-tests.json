@@ -20,6 +20,7 @@
     "tests/referenceAnalysis.regression.ts",
     "tests/referenceAnalysisTrust.regression.ts",
     "tests/poseLandmarkSanitizer.regression.ts",
-    "tests/cropClassification.regression.ts"
+    "tests/cropClassification.regression.ts",
+    "tests/lensHint.regression.ts"
   ]
 }

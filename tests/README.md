@@ -60,6 +60,10 @@ Coverage currently includes:
 - a waist-up subject touching the reference bottom remains `half` and keeps the estimated 2× lens hint;
 - a tight head/shoulders reference with shoulders near the segmented bottom remains `headshot` and keeps the estimated 3× lens hint;
 - nose-only or isolated arm evidence does not force a crop label;
-- segmentation-only references retain the previous bottom-position fallback when trusted crop anatomy is unavailable.
+- segmentation-only references retain the previous bottom-position fallback when trusted crop anatomy is unavailable;
+- 35mm-equivalent EXIF maps into the supported 0.5× / 1× / 2× / 3× advisory lens buckets;
+- numeric/rational EXIF forms and alternate 35mm-equivalent tag names are accepted;
+- invalid/zero/negative/non-finite focal metadata fails soft instead of creating a bogus lens hint;
+- crop-based lens hints remain the fallback when EXIF is unavailable.
 
 These suites are intentionally narrower than full application validation. They do not replace `npm run typecheck`, `npm run export:web`, or physical-device camera smoke tests.

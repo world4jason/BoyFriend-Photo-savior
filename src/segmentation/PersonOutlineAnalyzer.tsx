@@ -3,6 +3,7 @@ import PersonAnalyzerDom, {
   AnalyzerErrorPayload,
   AnalyzerResultPayload,
 } from './PersonAnalyzerDom';
+import type { LensHint } from '../types';
 import { PersonContourDetection } from './guideFromContour';
 
 export type OutlineAnalysisRequest = {
@@ -10,6 +11,8 @@ export type OutlineAnalysisRequest = {
   dataUrl: string;
   sourceUri: string;
   aspectRatio: number;
+  /** Optional reference-photo lens hint derived before analysis (for example from EXIF). */
+  lensHint?: LensHint;
   /** Camera-session identity for live analysis requests; absent for reference analysis. */
   sessionId?: number;
   /** Local cache files that can be deleted after analysis completes. */
