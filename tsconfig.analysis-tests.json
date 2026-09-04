@@ -1,0 +1,20 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "CommonJS",
+    "moduleResolution": "Node",
+    "strict": true,
+    "skipLibCheck": true,
+    "noEmitOnError": true,
+    "outDir": ".test-dist-analysis",
+    "rootDir": ".",
+    "verbatimModuleSyntax": false
+  },
+  "include": [
+    "src/types.ts",
+    "src/pose/PoseDetector.ts",
+    "src/shooting/lensHint.ts",
+    "src/segmentation/guideFromContour.ts",
+    "tests/referenceAnalysis.regression.ts"
+  ]
+}
