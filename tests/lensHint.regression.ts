@@ -36,20 +36,34 @@ test('85mm equivalent maps to 3x', () => {
   equal(exif(85)?.zoom, 3, '85mm zoom');
 });
 
-test('simple rational EXIF string is accepted', () => {
-  const hint = exif('50/1');
-  equal(hint?.zoom, 2, 'rational zoom');
-  equal(hint?.equivalentMm, 50, 'rational equivalent');
+test('numeric and rational EXIF strings are accepted', () => {
+  equal(exif('50')?.zoom, 2, 'numeric string zoom');
+  equal(exif('50 mm')?.zoom, 2, 'numeric string with unit zoom');
+  const rational = exif('50/1');
+  equal(rational?.zoom, 2, 'rational zoom');
+  equal(rational?.equivalentMm, 50, 'rational equivalent');
+  equal(exif('50/1 mm')?.zoom, 2, 'rational string with unit zoom');
 });
 
-test('alternate 35mm-equivalent key is accepted', () => {
+test('Android and iOS 35mm-equivalent keys are accepted', () => {
+  const android = lensHintFromExif({ FocalLengthIn35mmFilm: 50 });
+  equal(android?.zoom, 2, 'Android-style key zoom');
+  const ios = lensHintFromExif({ FocalLenIn35mmFilm: 85 });
+  equal(ios?.zoom, 3, 'ImageIO-style key zoom');
+  equal(ios?.equivalentMm, 85, 'ImageIO-style equivalent');
+});
+
+test('defensive alternate 35mm-equivalent key is accepted', () => {
   const hint = lensHintFromExif({ FocalLengthIn35mmFormat: '70 mm' });
   equal(hint?.zoom, 3, 'alternate-key zoom');
   equal(hint?.equivalentMm, 70, 'alternate-key equivalent');
 });
 
-test('invalid, zero, negative, and non-finite EXIF fail soft', () => {
+test('invalid, malformed, zero, negative, and non-finite EXIF fail soft', () => {
   equal(lensHintFromExif({ FocalLengthIn35mmFilm: 'not-a-number' }), null, 'invalid string');
+  equal(lensHintFromExif({ FocalLengthIn35mmFilm: '50foo' }), null, 'junk-suffixed number');
+  equal(lensHintFromExif({ FocalLengthIn35mmFilm: '50/0 mm' }), null, 'zero denominator');
+  equal(lensHintFromExif({ FocalLengthIn35mmFilm: '50/1 foo' }), null, 'junk-suffixed rational');
   equal(lensHintFromExif({ FocalLengthIn35mmFilm: 0 }), null, 'zero');
   equal(lensHintFromExif({ FocalLengthIn35mmFilm: -50 }), null, 'negative');
   equal(lensHintFromExif({ FocalLengthIn35mmFilm: Number.POSITIVE_INFINITY }), null, 'infinity');
