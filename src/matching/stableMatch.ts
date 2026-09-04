@@ -1,4 +1,4 @@
-import { MatchFeedback } from './guideMatch';
+import type { MatchFeedback } from './guideMatch';
 
 export type MatchStabilityState = {
   sampleCount: number;
