@@ -15,6 +15,7 @@
     "src/matching/guideMatch.ts",
     "src/matching/stableMatch.ts",
     "tests/stableMatch.regression.ts",
-    "tests/guideMatch.regression.ts"
+    "tests/guideMatch.regression.ts",
+    "tests/poseCoverage.regression.ts"
   ]
 }
