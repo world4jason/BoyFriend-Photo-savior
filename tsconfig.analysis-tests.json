@@ -15,6 +15,7 @@
     "src/pose/PoseDetector.ts",
     "src/shooting/lensHint.ts",
     "src/segmentation/guideFromContour.ts",
-    "tests/referenceAnalysis.regression.ts"
+    "tests/referenceAnalysis.regression.ts",
+    "tests/referenceAnalysisTrust.regression.ts"
   ]
 }
