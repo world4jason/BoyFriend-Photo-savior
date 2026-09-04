@@ -6,4 +6,4 @@
 - [x] Update development workflow documentation.
 - [x] Update PR template validation guidance.
 - [x] Review the known GHA touchpoints (`.github/workflows`, README, development guide, PR template) for stale active-CI assumptions.
-- [ ] Complete PR diff review with no unresolved P0/P1.
+- [x] Complete PR diff review with no unresolved P0/P1.
