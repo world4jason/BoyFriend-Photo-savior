@@ -20,6 +20,16 @@ type BoundaryEdge = {
 const MIN_CONTOUR_POINTS = 24;
 const MAX_CONTOUR_POINTS = 128;
 
+function minimumUsableComponentSize(width: number) {
+  // The legacy extractor required at least eight usable scan rows and each row
+  // had to contain strictly more than max(2, width * 0.006) foreground pixels.
+  // Keep the new connected-component gate no stricter than that old evidence
+  // floor; an area-percentage threshold disproportionately rejects small but
+  // valid people as mask resolution increases.
+  const minimumPixelsPerLegacyRow = Math.floor(Math.max(2, width * 0.006)) + 1;
+  return Math.max(24, minimumPixelsPerLegacyRow * 8);
+}
+
 function assertMaskShape(mask: ArrayLike<number>, width: number, height: number) {
   if (!Number.isInteger(width) || !Number.isInteger(height) || width <= 0 || height <= 0) {
     throw new Error('Person mask dimensions are invalid.');
@@ -352,7 +362,7 @@ export function extractPersonContourFromMask(
 ): MaskContourResult {
   assertMaskShape(mask, width, height);
   const { binary, foreground } = buildBinaryMask(mask, width, height);
-  const minimumComponent = Math.max(12, Math.floor(width * height * 0.001));
+  const minimumComponent = minimumUsableComponentSize(width);
   const component = largestConnectedComponent(binary, width, height);
 
   if (foreground === 0 || component.length < minimumComponent) {
