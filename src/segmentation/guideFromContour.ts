@@ -1,5 +1,6 @@
 import type { GuideSpec, NormalizedPoint, PersonGuide, PoseJoints } from '../types';
 import type { PoseLandmark } from '../pose/PoseDetector';
+import { classifyPortraitCrop } from '../analysis/classifyPortraitCrop';
 import { lensHintFromGuide } from '../shooting/lensHint';
 
 export type PersonContourDetection = {
@@ -166,16 +167,14 @@ export function buildGuideFromContour(
     joints,
   };
 
-  const hasAnkle = Boolean(joints.leftAnkle || joints.rightAnkle);
-  const hasKnee = Boolean(joints.leftKnee || joints.rightKnee);
-  const hasHip = Boolean(joints.leftHip || joints.rightHip);
-  const crop: GuideSpec['crop'] = hasAnkle || bottom > 0.92
-    ? 'full'
-    : hasKnee || bottom > 0.78
-      ? 'three-quarter'
-      : hasHip || bottom > 0.58
-        ? 'half'
-        : 'headshot';
+  const crop = classifyPortraitCrop({
+    hasAnkle: Boolean(joints.leftAnkle || joints.rightAnkle),
+    hasKnee: Boolean(joints.leftKnee || joints.rightKnee),
+    hasHip: Boolean(joints.leftHip || joints.rightHip),
+    hasArm: Boolean(joints.leftElbow || joints.rightElbow || joints.leftWrist || joints.rightWrist),
+    hasUpperPose: Boolean(nose || leftShoulder || rightShoulder),
+    silhouetteBottom: bottom,
+  });
 
   const guide: GuideSpec = {
     kind: 'portrait',
