@@ -3,7 +3,7 @@
 ## MODIFIED Requirements
 
 ### Requirement: Fail soft across ML subsystems
-The system SHALL preserve useful output when optional pose or face analysis fails and SHALL provide an editable fallback when automatic extraction cannot complete. When dedicated face analysis is unavailable, fallback left/right face direction inferred from pose landmarks SHALL use only finite pose coordinates whose confidence meets the reference-analysis trust threshold. If trusted fallback landmarks are insufficient, the system SHALL avoid inventing a precise left/right turn.
+The system SHALL preserve useful output when optional pose or face analysis fails and SHALL provide an editable fallback when automatic extraction cannot complete. When dedicated face analysis is unavailable, fallback left/right face direction inferred from pose landmarks SHALL use only finite pose coordinates. When confidence is present, it SHALL also be finite and meet the applicable reference-analysis trust threshold. If trusted fallback landmarks are insufficient, the system SHALL avoid inventing a precise left/right turn.
 
 #### Scenario: Face model unavailable with trusted pose face landmarks
 - **WHEN** dedicated face analysis is unavailable but trusted nose plus eye/ear pose landmarks are available
@@ -13,8 +13,12 @@ The system SHALL preserve useful output when optional pose or face analysis fail
 - **WHEN** dedicated face analysis is unavailable and the pose eye/ear landmarks are below the fallback trust threshold
 - **THEN** the guide remains usable without claiming a precise left/right turn
 
+#### Scenario: Pose landmark has no confidence field
+- **WHEN** a pose landmark has finite coordinates but no confidence value is available
+- **THEN** the landmark may remain eligible for shared geometry and fallback inference according to the applicable geometric requirements
+
 #### Scenario: Non-finite pose landmark
-- **WHEN** a pose landmark has NaN/Infinity coordinates or non-finite confidence
+- **WHEN** a pose landmark has NaN/Infinity coordinates or a present confidence value is non-finite
 - **THEN** that landmark is excluded from shared guide geometry and fallback face-direction inference
 
 #### Scenario: Face model unavailable
