@@ -7,9 +7,9 @@
 - `contour` remains the single outer source-derived boundary.
 - `contourHoles` stores enclosed background rings belonging to that same selected person component.
 - Rings are normalized source-image coordinates and do not repeat the first point at the end.
-- Missing/empty `contourHoles` means the analyzer has no trusted interior-ring geometry; renderers must not invent it.
+- Missing/empty `PersonGuide.contourHoles` means the analyzer has no trusted interior-ring geometry; renderers must not invent it.
 
-`MaskContourResult` carries the same optional rings so the segmentation boundary is explicit before `GuideSpec` construction.
+`MaskContourResult` always carries `contourHoles: NormalizedPoint[][]`; an empty array means boundary extraction found no retained interior rings or used scanline fallback. `buildGuideFromContour()` converts that empty array back to an omitted optional `PersonGuide.contourHoles` field so existing GuideSpec data stays compact/backward-compatible.
 
 ## Ring extraction
 
@@ -22,9 +22,9 @@ The new extractor will:
 3. keep only loops whose signed area is opposite the outer loop, which identifies enclosed background boundaries under the existing foreground-on-right edge orientation;
 4. reject tiny pinholes using both absolute/relative area and minimum horizontal/vertical span;
 5. keep at most the four largest meaningful holes;
-6. simplify/resample each retained ring to a bounded point budget.
+6. simplify/resample each retained ring to a bounded point budget using the same RDP-based policy as the outer contour.
 
-Proposed bounds:
+Bounds:
 
 - outer contour: existing 24..128 points;
 - each interior ring: 12..64 points;
@@ -40,7 +40,7 @@ If ordered boundary tracing cannot produce a usable outer loop, the existing sca
 
 ## Rendering
 
-Source-derived Outline/Ghost will use one SVG compound path:
+Source-derived Outline/Ghost use one SVG compound path:
 
 `outer subpath + zero-or-more interior subpaths`
 
