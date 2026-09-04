@@ -5,6 +5,6 @@
 - [x] Implement largest-component mask boundary tracing with bounded simplification.
 - [x] Keep legacy scanline hull as fail-soft fallback.
 - [x] Wire the pure contour extractor into `PersonAnalyzerDom` without changing MediaPipe model configuration.
-- [x] Add deterministic concavity / noise / hole / normalization regression coverage.
+- [x] Add deterministic concavity / noise / hole / normalization regression coverage, including small-subject and skinny-sliver eligibility cases found during review.
 - [x] Update current `reference-analysis` OpenSpec and benchmark documentation.
-- [ ] Review the complete PR diff for P0/P1 regressions before merge.
+- [x] Review the complete PR diff for P0/P1 regressions before merge; fix the resolution-dependent component-area P1 found in first review.
