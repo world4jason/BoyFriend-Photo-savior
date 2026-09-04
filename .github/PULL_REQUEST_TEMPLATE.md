@@ -44,6 +44,7 @@
 
 - [ ] `openspec validate --specs`
 - [ ] `npm run typecheck`
+- [ ] `npm run test:matching`
 - [ ] `npm run export:web`
 - [ ] Web manual smoke test
 - [ ] iOS physical-device smoke test
