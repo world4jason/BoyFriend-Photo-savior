@@ -1,15 +1,32 @@
 import type { GuideSpec, LensHint } from '../types';
 
+/**
+ * EXIF bridges may return a number, a decimal string, or a rational string.
+ * Parse only explicit numeric forms so malformed metadata can never turn into
+ * a plausible-but-wrong focal length by stripping arbitrary characters.
+ */
 const asFiniteNumber = (value: unknown): number | null => {
-  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
   if (typeof value !== 'string') return null;
+
   const text = value.trim();
   if (!text) return null;
-  if (text.includes('/')) {
-    const [left, right] = text.split('/').map(Number);
-    if (Number.isFinite(left) && Number.isFinite(right) && right !== 0) return left / right;
+
+  const numberPattern = '[+-]?(?:\\d+(?:\\.\\d+)?|\\.\\d+)';
+  const rational = text.match(new RegExp(`^(${numberPattern})\\s*\\/\\s*(${numberPattern})\\s*(?:mm)?$`, 'i'));
+  if (rational) {
+    const numerator = Number(rational[1]);
+    const denominator = Number(rational[2]);
+    if (Number.isFinite(numerator) && Number.isFinite(denominator) && denominator !== 0) {
+      const parsed = numerator / denominator;
+      return Number.isFinite(parsed) ? parsed : null;
+    }
+    return null;
   }
-  const parsed = Number(text.replace(/[^0-9.+-]/g, ''));
+
+  const scalar = text.match(new RegExp(`^(${numberPattern})\\s*(?:mm)?$`, 'i'));
+  if (!scalar) return null;
+  const parsed = Number(scalar[1]);
   return Number.isFinite(parsed) ? parsed : null;
 };
 
@@ -23,14 +40,18 @@ const zoomFromEquivalentMm = (mm: number): LensHint['zoom'] => {
 export function lensHintFromExif(exif?: Record<string, unknown> | null): LensHint | null {
   if (!exif) return null;
   const candidates = [
+    // AndroidX ExifInterface naming.
     exif.FocalLengthIn35mmFilm,
+    // Apple ImageIO / CoreGraphics EXIF dictionary naming used by Expo iOS.
+    exif.FocalLenIn35mmFilm,
+    // Defensive aliases seen in other EXIF bridges/exporters.
     exif.FocalLengthIn35mmFormat,
     exif.FocalLength35mm,
     exif.FocalLengthIn35mm,
   ];
   for (const candidate of candidates) {
     const mm = asFiniteNumber(candidate);
-    if (mm && mm > 0) {
+    if (mm != null && mm > 0) {
       return { zoom: zoomFromEquivalentMm(mm), basis: 'exif-35mm', equivalentMm: Math.round(mm) };
     }
   }
