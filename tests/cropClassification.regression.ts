@@ -135,6 +135,16 @@ test('guide integration: nose-only pose does not force headshot classification',
   equal(guide.lensHint?.zoom, 1, 'nose-only fallback keeps segmentation-derived lens hint');
 });
 
+test('guide integration: isolated elbow/wrist does not force half-body classification', () => {
+  const guide = buildGuideFromContour(detection([
+    landmark('left_elbow', 0.42, 0.44),
+    landmark('left_wrist', 0.48, 0.28),
+  ]), 3 / 4);
+
+  equal(guide.crop, 'full', 'isolated arm evidence falls back to segmentation crop heuristic');
+  equal(guide.lensHint?.zoom, 1, 'isolated arm fallback keeps segmentation-derived lens hint');
+});
+
 test('guide integration: no trusted pose keeps segmentation-only full-body fallback', () => {
   const guide = buildGuideFromContour(detection([]), 3 / 4);
   equal(guide.crop, 'full', 'no-pose segmentation fallback crop');
