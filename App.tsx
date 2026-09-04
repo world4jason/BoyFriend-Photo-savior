@@ -28,6 +28,7 @@ import {
 import { SAMPLE_REFERENCES, SampleReference } from './src/sampleReferences';
 import { OutlineAnalysisRequest, PersonOutlineAnalyzer } from './src/segmentation/PersonOutlineAnalyzer';
 import { buildGuideFromContour, PersonContourDetection } from './src/segmentation/guideFromContour';
+import { lensHintFromExif } from './src/shooting/lensHint';
 import { BENCHMARK_TEMPLATES, BenchmarkTemplate } from './src/templates';
 import { DEFAULT_GUIDE, GuideMode, GuidePreset, GuideSpec } from './src/types';
 
@@ -153,6 +154,7 @@ export default function App() {
       allowsEditing: false,
       quality: 1,
       base64: false,
+      exif: true,
     });
     if (result.canceled) return;
 
@@ -164,11 +166,15 @@ export default function App() {
     setAnalysisRequest(null);
 
     const aspectRatio = asset.width && asset.height ? asset.width / asset.height : 0.75;
+    const pickedLensHint = lensHintFromExif(
+      asset.exif as Record<string, unknown> | null | undefined,
+    );
     const fallback = cloneGuide(DEFAULT_GUIDE);
     selectedPresetRef.current = 'sovs';
     fallback.visualStyle = 'sovs';
     fallback.sourceUri = asset.uri;
     fallback.aspectRatio = aspectRatio;
+    if (pickedLensHint) fallback.lensHint = pickedLensHint;
 
     setReferenceUri(asset.uri);
     setActiveSample(null);
@@ -190,6 +196,7 @@ export default function App() {
         dataUrl: prepared.dataUrl,
         sourceUri: asset.uri,
         aspectRatio,
+        lensHint: pickedLensHint ?? undefined,
         cleanupUris: prepared.temporaryUri ? [prepared.temporaryUri] : [],
       });
       setAnalysisMessage('Extracting contour + pose + face direction…');
@@ -204,6 +211,7 @@ export default function App() {
     try {
       const nextGuide = buildGuideFromContour(detection, request.aspectRatio, request.sourceUri);
       nextGuide.visualStyle = selectedPresetRef.current;
+      if (request.lensHint) nextGuide.lensHint = request.lensHint;
       setGuide(nextGuide);
       setAnalysisStatus('ready');
       const extras = [
