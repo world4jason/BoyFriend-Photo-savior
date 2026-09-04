@@ -15,9 +15,11 @@
     "src/pose/PoseDetector.ts",
     "src/shooting/lensHint.ts",
     "src/analysis/poseLandmarkSanitizer.ts",
+    "src/analysis/classifyPortraitCrop.ts",
     "src/segmentation/guideFromContour.ts",
     "tests/referenceAnalysis.regression.ts",
     "tests/referenceAnalysisTrust.regression.ts",
-    "tests/poseLandmarkSanitizer.regression.ts"
+    "tests/poseLandmarkSanitizer.regression.ts",
+    "tests/cropClassification.regression.ts"
   ]
 }
