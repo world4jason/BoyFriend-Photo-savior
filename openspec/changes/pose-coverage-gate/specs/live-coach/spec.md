@@ -11,6 +11,8 @@ The minimum live optional-anchor coverage SHALL be:
 min(targetAnchorCount, max(2, ceil(targetAnchorCount * 0.60)))
 ```
 
+When pose is required but the live pose comparison is not usable, the aggregate score SHALL retain the pose component's normal weight as unsatisfied rather than renormalizing only the available framing/scale components into a misleading full score. The public `poseScore` MAY remain unavailable so the camera can preserve the existing pose-visibility guidance path.
+
 #### Scenario: Small two-anchor pose is fully represented
 - **WHEN** a target encodes exactly two optional pose anchors
 - **THEN** both optional anchors must be available in the live sample before pose matching can satisfy the matched-state gate
@@ -18,6 +20,10 @@ min(targetAnchorCount, max(2, ceil(targetAnchorCount * 0.60)))
 #### Scenario: Full-body target is only partially visible
 - **WHEN** a target encodes eight optional pose anchors but the live sample exposes only two of those anchors plus the shoulders
 - **THEN** the pose comparison is not considered usable and the raw status cannot be `matched`
+
+#### Scenario: Missing required pose does not display a perfect aggregate
+- **WHEN** framing and scale are perfect but required pose coverage is insufficient
+- **THEN** the aggregate score still includes the unsatisfied pose weight rather than renormalizing framing and scale to 100%
 
 #### Scenario: Full-body target has majority coverage
 - **WHEN** a target encodes eight optional pose anchors and the live sample exposes at least five matching optional anchors with sufficient geometric agreement
