@@ -2,7 +2,25 @@
 
 The repository uses **OpenSpec + branch + PR + deliberate review** for non-trivial behavior changes.
 
-GitHub Actions is useful when available, but hosted-runner billing/availability is currently **not a merge gate**. A failed workflow with no executed steps is infrastructure noise, not an application test failure.
+## GitHub Actions status
+
+GitHub Actions is intentionally **disabled** for this repository while the hosted-runner/billing issue remains unresolved. There should be no active `.github/workflows/*` validation workflow during this period.
+
+Do not use missing GitHub checks as evidence that a PR passed or failed. Validation must record only work that actually executed.
+
+Current validation paths are:
+
+```text
+OpenSpec review
+  -> focused branch + PR
+  -> complete-diff review
+  -> resolve P0/P1
+  -> local spec/type/Web checks when a runnable environment exists
+  -> EAS Hosting / deployed-Web smoke when relevant
+  -> physical-device smoke for camera/native changes
+```
+
+Reintroducing GitHub Actions requires a separate reviewed change after the runner/account issue is confirmed resolved.
 
 ## Source-of-truth hierarchy
 
@@ -57,6 +75,8 @@ Create/update an OpenSpec change before implementation when work changes observa
 
 A pure code cleanup may skip delta specs when behavior intentionally stays identical, but the PR must say so and still respect current specs.
 
+Repository-process changes may use an OpenSpec change folder without a capability delta when observable product behavior is unchanged.
+
 ## OpenSpec quick start
 
 OpenSpec currently requires Node.js 20.19+; this project already targets Node 22.13+.
@@ -68,7 +88,7 @@ openspec validate --specs
 openspec new change <change-name>
 ```
 
-For the default spec-driven workflow, a change should normally contain:
+For the default spec-driven workflow, a behavior change should normally contain:
 
 ```text
 openspec/changes/<change-name>/
@@ -89,7 +109,7 @@ Use a focused branch, for example:
 ```text
 feat/live-frame-processing
 fix/reference-analysis-memory
-chore/openspec-architecture-audit
+chore/disable-broken-github-actions
 ```
 
 A direct `main` edit should be limited to a trivial emergency correction when explicitly justified.
@@ -158,18 +178,20 @@ Do not merge immediately after writing the code.
 
 #### Validation
 
-When Actions is unavailable, record what was actually verified. Never claim tests/builds passed when they did not run.
+GitHub Actions is disabled. Record only checks that actually ran.
 
-Preferred checks when a local runtime is available:
+Preferred local checks when a runnable environment is available:
 
 ```bash
 npm install
+npm run spec:validate
 npm run typecheck
 npm run export:web
-openspec validate --specs
 ```
 
-Camera behavior should also be checked on a physical iOS or Android device before calling camera changes stable.
+For Web behavior, a current EAS Hosting deployment can be used as a runtime smoke test. Camera behavior should also be checked on a physical iOS or Android device before calling camera changes stable.
+
+If none of these executed, write `not run` in the PR review rather than inferring success.
 
 ## Severity
 
