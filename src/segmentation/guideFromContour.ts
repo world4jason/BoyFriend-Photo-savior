@@ -1,5 +1,5 @@
-import { GuideSpec, NormalizedPoint, PersonGuide, PoseJoints } from '../types';
-import { PoseLandmark } from '../pose/PoseDetector';
+import type { GuideSpec, NormalizedPoint, PersonGuide, PoseJoints } from '../types';
+import type { PoseLandmark } from '../pose/PoseDetector';
 import { lensHintFromGuide } from '../shooting/lensHint';
 
 export type PersonContourDetection = {
@@ -15,18 +15,25 @@ export type PersonContourDetection = {
   faceYawDegrees?: number;
 };
 
+type TrustedLandmark = (name: string, minConfidence?: number) => PoseLandmark | undefined;
+
 const clamp = (value: number, min = 0, max = 1) => Math.max(min, Math.min(max, value));
 const midpoint = (a: NormalizedPoint, b: NormalizedPoint): NormalizedPoint => ({
   x: (a.x + b.x) / 2,
   y: (a.y + b.y) / 2,
 });
 
-function inferFacing(byName: Map<string, PoseLandmark>): PersonGuide['head']['facing'] {
-  const nose = byName.get('nose');
-  const leftEar = byName.get('left_ear');
-  const rightEar = byName.get('right_ear');
-  const leftEye = byName.get('left_eye');
-  const rightEye = byName.get('right_eye');
+/**
+ * Pose-based face direction is only a fallback for when the dedicated face
+ * model has no result. Reuse the same trusted-landmark boundary as the rest of
+ * guide geometry so low-quality pose points never become a confident cue.
+ */
+function inferFacing(visible: TrustedLandmark): PersonGuide['head']['facing'] {
+  const nose = visible('nose', 0.10);
+  const leftEar = visible('left_ear');
+  const rightEar = visible('right_ear');
+  const leftEye = visible('left_eye');
+  const rightEye = visible('right_eye');
   if (!nose) return 'front';
 
   const pair = leftEar && rightEar
@@ -64,10 +71,13 @@ export function buildGuideFromContour(
   const centerX = (left + right) / 2;
 
   const byName = new Map((detection.poseLandmarks ?? []).map((point) => [point.name, point]));
-  const visible = (name: string, minConfidence = 0.18) => {
+  const visible: TrustedLandmark = (name, minConfidence = 0.18) => {
     const point = byName.get(name);
     if (!point) return undefined;
-    if (point.confidence != null && point.confidence < minConfidence) return undefined;
+    if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) return undefined;
+    if (point.confidence != null) {
+      if (!Number.isFinite(point.confidence) || point.confidence < minConfidence) return undefined;
+    }
     return point;
   };
 
@@ -132,7 +142,7 @@ export function buildGuideFromContour(
     rightAnkle: visible('right_ankle'),
   };
 
-  const facing = detection.faceDirection ?? inferFacing(byName);
+  const facing = detection.faceDirection ?? inferFacing(visible);
 
   const person: PersonGuide = {
     contour: detection.contour,

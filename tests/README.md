@@ -1,4 +1,6 @@
-# Matching regression tests
+# Domain regression tests
+
+## Matching
 
 Run:
 
@@ -8,7 +10,7 @@ npm run test:matching
 
 The script uses the project's existing TypeScript compiler to compile a small pure-domain subset into `.test-dist/`, then executes it with Node. No additional test framework is required.
 
-## Stable Match coverage
+### Stable Match coverage
 
 - two consecutive raw matches are required to enter stable;
 - stable-entry fires once per stable period (the Auto Capture gate);
@@ -18,7 +20,7 @@ The script uses the project's existing TypeScript compiler to compile a small pu
 - non-severe adjacent score jitter still uses EMA smoothing;
 - framing/scale severe thresholds can independently trigger a severe miss.
 
-## Guide Match coverage
+### Guide Match coverage
 
 - a visually aligned 3:4 portrait target aspect-fitted into a 9:16 camera still scores as aligned;
 - horizontal displacement produces the correct opposite-direction correction;
@@ -27,10 +29,29 @@ The script uses the project's existing TypeScript compiler to compile a small pu
 - duo/group targets remain manual-guide-only;
 - a clearly undersized subject is told to move closer before lower-priority pose corrections.
 
-## Pose Coverage coverage
+### Pose Coverage coverage
 
 - a full-body target with eight optional joint anchors rejects a live pose that covers only two of those anchors;
 - the same eight-anchor target can use pose scoring when five matching optional anchors are visible;
 - a small two-anchor target requires both optional anchors rather than allowing one anchor plus shoulders to satisfy pose intent.
 
-This suite is intentionally narrower than full application validation. It does not replace `npm run typecheck`, `npm run export:web`, or physical-device camera smoke tests.
+## Reference analysis
+
+Run:
+
+```bash
+npm run test:analysis
+```
+
+Coverage currently includes:
+
+- dedicated Face Landmarker direction overrides conflicting low-confidence pose fallback points;
+- low-confidence pose face landmarks cannot invent a precise left/right direction;
+- trusted pose face landmarks can provide a fallback direction when dedicated face analysis is unavailable;
+- raw MediaPipe NaN/Infinity coordinates are dropped **before** finite values are clamped into `0..1`;
+- present non-finite visibility/presence values reject the raw landmark;
+- finite presence is used when visibility is absent;
+- missing confidence remains eligible for finite geometry;
+- the guide builder repeats finite/confidence filtering as defense-in-depth.
+
+These suites are intentionally narrower than full application validation. They do not replace `npm run typecheck`, `npm run export:web`, or physical-device camera smoke tests.
