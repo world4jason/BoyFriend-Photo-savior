@@ -106,6 +106,19 @@ export function smoothSourceContourPath(
   return smoothClosedPixelPath(contour.map((point) => ({ x: tx(point.x), y: ty(point.y) })));
 }
 
+export function smoothSourceContourCompoundPath(
+  contour: NormalizedPoint[],
+  contourHoles: NormalizedPoint[][] | undefined,
+  tx: (x: number) => number,
+  ty: (y: number) => number,
+): string {
+  const paths = [smoothSourceContourPath(contour, tx, ty)];
+  (contourHoles ?? []).forEach((ring) => {
+    if (ring.length >= 3) paths.push(smoothSourceContourPath(ring, tx, ty));
+  });
+  return paths.filter(Boolean).join(' ');
+}
+
 export function PortraitGuides({ guide, style, visual, opacity, frameWidth, tx, ty, rx, ry }: Props) {
   const pixel = (point?: NormalizedPoint): PixelPoint | null => point ? { x: tx(point.x), y: ty(point.y) } : null;
 
@@ -179,7 +192,7 @@ export function PortraitGuides({ guide, style, visual, opacity, frameWidth, tx, 
   const silhouettePerson = (person: PersonGuide, index: number) => {
     const hasContour = Boolean(person.contour && person.contour.length >= 3);
     if (!hasContour) return fallbackEnvelope(person, index);
-    const path = smoothSourceContourPath(person.contour!, tx, ty);
+    const path = smoothSourceContourCompoundPath(person.contour!, person.contourHoles, tx, ty);
     const fillOpacity = style === 'ghost' ? Math.max(0.14, visual.fillOpacity) : 0;
     const lineOpacity = style === 'ghost' ? Math.max(0.52, opacity * 0.74) : opacity;
     return (
@@ -187,6 +200,7 @@ export function PortraitGuides({ guide, style, visual, opacity, frameWidth, tx, 
         key={`source-contour-${index}`}
         d={path}
         fill={visual.stroke} fillOpacity={fillOpacity}
+        fillRule="evenodd"
         stroke={visual.stroke} strokeWidth={visual.strokeWidth} strokeOpacity={lineOpacity}
         strokeLinejoin="round" strokeLinecap="round"
       />
