@@ -27,4 +27,10 @@ The script uses the project's existing TypeScript compiler to compile a small pu
 - duo/group targets remain manual-guide-only;
 - a clearly undersized subject is told to move closer before lower-priority pose corrections.
 
+## Pose Coverage coverage
+
+- a full-body target with eight optional joint anchors rejects a live pose that covers only two of those anchors;
+- the same eight-anchor target can use pose scoring when five matching optional anchors are visible;
+- a small two-anchor target requires both optional anchors rather than allowing one anchor plus shoulders to satisfy pose intent.
+
 This suite is intentionally narrower than full application validation. It does not replace `npm run typecheck`, `npm run export:web`, or physical-device camera smoke tests.
