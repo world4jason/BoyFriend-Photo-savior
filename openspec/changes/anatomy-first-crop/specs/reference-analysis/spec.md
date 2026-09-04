@@ -3,19 +3,19 @@
 ## ADDED Requirements
 
 ### Requirement: Portrait crop classification prefers trusted anatomy
-When trusted pose anatomy is available, portrait crop metadata SHALL be derived from the lowest meaningful trusted anatomical evidence rather than from whether the segmentation silhouette touches the image bottom. Segmentation-bottom thresholds SHALL be used only when no trusted pose anatomy is available.
+Portrait crop metadata SHALL prefer trusted lower-body anatomy over absolute segmentation-bottom position. When no trusted lower-body anatomy is available but a trusted shoulder is available, the system SHALL distinguish a tight head/shoulders crop from a longer upper-body crop using the segmented subject extent below that trusted shoulder. Segmentation-bottom thresholds SHALL be used only when neither trusted lower-body anatomy nor a trusted shoulder supports the crop decision.
 
 #### Scenario: Waist-up subject touches the bottom edge
 - **WHEN** trusted hip landmarks are visible, no trusted knees/ankles are available, and the silhouette extends below 0.92 of image height
 - **THEN** the crop is `half` rather than `full`
 
-#### Scenario: Face-and-shoulders subject touches the bottom edge
-- **WHEN** trusted face/shoulder pose evidence is available but no trusted arm/hip/knee/ankle evidence is available
-- **THEN** the crop is `headshot` regardless of the silhouette bottom coordinate
+#### Scenario: Shoulder is high within a bottom-touching silhouette
+- **WHEN** no trusted hip/knee/ankle is available, a trusted shoulder is available, and more than 38% of the segmented subject height remains below the shoulder
+- **THEN** the crop is `half` rather than `headshot` or `full`
 
-#### Scenario: Upper-body arms are visible without lower-body anatomy
-- **WHEN** a trusted elbow or wrist is visible but no trusted hip/knee/ankle evidence is available
-- **THEN** the crop is `half`
+#### Scenario: Shoulder is near the bottom of the segmented subject
+- **WHEN** no trusted hip/knee/ankle is available, a trusted shoulder is available, and at most 38% of the segmented subject height remains below the shoulder
+- **THEN** the crop is `headshot`
 
 #### Scenario: Trusted knee without ankle
 - **WHEN** a trusted knee is visible but no trusted ankle is available
@@ -25,6 +25,14 @@ When trusted pose anatomy is available, portrait crop metadata SHALL be derived 
 - **WHEN** a trusted ankle is visible
 - **THEN** the crop is `full`
 
+#### Scenario: Nose-only pose evidence
+- **WHEN** a trusted nose is available but no trusted shoulder/hip/knee/ankle supports crop classification
+- **THEN** the nose alone does not force `headshot` and the system may use the segmentation-only fallback
+
+#### Scenario: Isolated hand or arm evidence
+- **WHEN** an elbow/wrist is detected but no trusted shoulder/hip/knee/ankle supports crop classification
+- **THEN** the isolated arm evidence alone does not force a crop label
+
 #### Scenario: Pose anatomy unavailable
-- **WHEN** no trusted pose anatomy is available
+- **WHEN** neither trusted lower-body anatomy nor a trusted shoulder is available
 - **THEN** the system may fall back to the existing segmentation-bottom heuristic and keeps that inference advisory
