@@ -82,6 +82,11 @@ export type PoseJoints = {
 export type PersonGuide = {
   /** Closed outer contour in source-image normalized coordinates. */
   contour?: NormalizedPoint[];
+  /**
+   * Optional enclosed background rings from the same source silhouette.
+   * These are source-derived negative-space boundaries, not pose/skeleton lines.
+   */
+  contourHoles?: NormalizedPoint[][];
   head: {
     center: NormalizedPoint;
     rx: number;
